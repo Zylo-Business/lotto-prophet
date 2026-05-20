@@ -11,6 +11,7 @@ export type User = {
   mobile_number: string;
   referral_code: string | null;
   date_of_birth: string;
+  role: 'user' | 'admin';
   created_at: string;
 };
 

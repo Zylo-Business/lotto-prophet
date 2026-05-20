@@ -44,6 +44,13 @@ const sanitizeUser = (user: User): Omit<User, 'password_hash' | 'reset_token' | 
   return safeUser;
 };
 
+const signToken = (user: User): string =>
+  jwt.sign(
+    { id: user.id, email: user.email, role: user.role ?? 'user' },
+    config.jwt.secret,
+    { expiresIn: config.jwt.expiresInSeconds },
+  );
+
 // ─── POST /api/auth/register ─────────────────────────────────────────
 
 router.post('/register', async (req: Request, res: Response) => {
@@ -127,11 +134,7 @@ router.post('/register', async (req: Request, res: Response) => {
     const newUser: User = await dbGet('SELECT * FROM users WHERE id = ?', [result.lastID]);
 
     // Generate JWT
-    const token = jwt.sign(
-      { id: newUser.id, email: newUser.email },
-      config.jwt.secret,
-      { expiresIn: config.jwt.expiresInSeconds }
-    );
+    const token = signToken(newUser);
 
     res.status(201).json({
       message: 'Registration successful.',
@@ -179,11 +182,7 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 
     // Generate JWT
-    const token = jwt.sign(
-      { id: user.id, email: user.email },
-      config.jwt.secret,
-      { expiresIn: config.jwt.expiresInSeconds }
-    );
+    const token = signToken(user);
 
     res.json({
       message: 'Login successful.',
