@@ -1,0 +1,105 @@
+# ========================================
+# Lotto Prophet — Monorepo .gitignore
+# ========================================
+
+# ---------- Dependencies ----------
+node_modules/
+jspm_packages/
+web_modules/
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# ---------- Build / Output ----------
+dist/
+dist-ssr/
+build/
+build/Release
+out/
+.next/
+web-build/
+*.tgz
+
+# ---------- Expo / React Native ----------
+.expo/
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+.metro-health-check*
+/Lotto-Prophet-Mobile/ios/
+/Lotto-Prophet-Mobile/android/
+expo-env.d.ts
+
+# ---------- Environment Variables ----------
+.env
+.env.*
+.env.local
+.env*.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+
+# ---------- Logs ----------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+firebase-debug.log
+firebase-debug.*.log
+
+# ---------- Testing / Coverage ----------
+coverage/
+*.lcov
+.nyc_output/
+
+# ---------- TypeScript ----------
+*.tsbuildinfo
+next-env.d.ts
+
+# ---------- OS Files ----------
+.DS_Store
+Thumbs.db
+*.pem
+
+# ---------- Editors / IDEs ----------
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ---------- Misc ----------
+.firebase/
+.report/
+.grunt/
+lib-cov/
+.microbundle/
+.eslintcache
+.stylelintcache
+tmp/
+pids/
+*.pid
+*.seed
+*.info
+.pnpm-store/
+
+# ---------- AI / Tooling ----------
+.specstory/
+.llm-notes/
+
+# ---------- CSV data files ----------
+*.csv
