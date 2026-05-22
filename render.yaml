@@ -4,9 +4,8 @@ services:
     runtime: node
     repo: "./"
     rootDir: server
-    buildCommand: "npm ci"
+    buildCommand: "npm ci --prefix server"
     startCommand: "npm run start"
     env:
       - key: NODE_ENV
         value: production
-
