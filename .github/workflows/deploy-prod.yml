@@ -1,0 +1,11 @@
+name: Deploy Prod (placeholder)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Placeholder
+        run: echo "Deploy Prod workflow scaffolded; implement Render deploy steps in Phase 4."
