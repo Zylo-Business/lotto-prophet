@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: lotto-prophet-api
+    runtime: node
+    repo: "./"
+    rootDir: server
+    buildCommand: "npm ci"
+    startCommand: "npm run start"
+    env:
+      - key: NODE_ENV
+        value: production
+
