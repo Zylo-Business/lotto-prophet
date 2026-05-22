@@ -14,12 +14,14 @@ import {
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { Paystack, paystackProps } from 'react-native-paystack-webview';
 import { useTheme, type AppColors } from './context/ThemeContext';
+import { useAuth } from './context/AuthContext';
 
 const { width } = Dimensions.get('window');
 const GOLD = '#FFD700';
 
 export default function SubscriptionScreen() {
   const { colors: COLORS } = useTheme();
+  const { user } = useAuth();
   const styles = useMemo(() => createStyles(COLORS), [COLORS]);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -83,11 +85,8 @@ export default function SubscriptionScreen() {
     },
   ];
 
-  // Replace with your actual Paystack public key
   const PAYSTACK_PUBLIC_KEY = 'pk_test_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
-  
-  // User email - should come from auth context in production
-  const userEmail = 'user@example.com';
+  const userEmail = user?.email ?? '';
 
   const handleSelectPlan = (planId: string) => {
     setSelectedPlan(planId);
@@ -137,9 +136,10 @@ export default function SubscriptionScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        style={styles.scrollView}
       >
         {/* Header */}
         <Animated.View entering={FadeInUp.duration(500)} style={styles.header}>
@@ -237,7 +237,7 @@ export default function SubscriptionScreen() {
         </Animated.View>
       </ScrollView>
 
-      {/* Subscribe Button */}
+      {/* Subscribe Button — in normal flow so it never overlaps other screens */}
       <Animated.View entering={FadeInUp.delay(300).duration(500)} style={styles.bottomContainer}>
         <Pressable
           style={({ pressed }) => [
@@ -295,9 +295,12 @@ const createStyles = (COLORS: AppColors) => StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+  scrollView: {
+    flex: 1,
+  },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 140,
+    paddingBottom: 24,
   },
   header: {
     alignItems: 'center',
@@ -487,10 +490,6 @@ const createStyles = (COLORS: AppColors) => StyleSheet.create({
     fontWeight: '500',
   },
   bottomContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     backgroundColor: COLORS.card,
     paddingHorizontal: 20,
     paddingTop: 16,

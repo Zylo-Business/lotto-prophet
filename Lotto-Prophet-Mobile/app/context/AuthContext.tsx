@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as authApi from '../lib/auth';
-import type { User, RegisterData } from '../lib/auth';
+import type { User, RegisterData, ProfileUpdateData } from '../lib/auth';
 import { deleteToken, getToken, saveToken } from '../lib/authStorage';
 
 type AuthContextValue = {
@@ -12,6 +12,8 @@ type AuthContextValue = {
   register: (data: RegisterData) => Promise<void>;
   forgotPassword: (email: string) => Promise<string>;
   logout: () => Promise<void>;
+  updateUser: (data: ProfileUpdateData) => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -23,17 +25,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    // On mount, try to restore token
+    // On mount, try to restore token and current user
     (async () => {
       try {
         const t = await getToken();
         if (t) {
+          const currentUser = await authApi.getCurrentUser(t);
           setToken(t);
-          // Optionally, fetch user profile with token.
-          setUser(null); // placeholder: you may fetch /me
+          setUser(currentUser);
         }
       } catch (e) {
-        console.warn('Failed to restore token', e);
+        console.warn('Failed to restore session', e);
+        await deleteToken();
+        setToken(null);
+        setUser(null);
       } finally {
         setLoading(false);
       }
@@ -86,6 +91,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  async function updateUser(data: ProfileUpdateData) {
+    if (!token) throw new Error('Not authenticated');
+    const updated = await authApi.updateProfile(token, data);
+    setUser(updated);
+  }
+
+  async function changePassword(currentPassword: string, newPassword: string) {
+    if (!token) throw new Error('Not authenticated');
+    await authApi.changePassword(token, currentPassword, newPassword);
+  }
+
   async function logout() {
     setLoading(true);
     try {
@@ -101,7 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, forgotPassword, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, forgotPassword, logout, updateUser, changePassword }}>
       {children}
     </AuthContext.Provider>
   );

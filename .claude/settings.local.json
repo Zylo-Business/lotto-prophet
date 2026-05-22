@@ -4,7 +4,10 @@
       "Bash(npx tsc *)",
       "Bash(npm run *)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(pnpm install *)",
+      "Bash(node -e ' *)",
+      "Bash(npx tsx *)"
     ]
   }
 }

@@ -1,7 +1,7 @@
 import pkg from 'pg';
 import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const { Pool, types } = pkg;
 
@@ -96,7 +96,6 @@ export const initDb = async () => {
   `);
   await pool.query(`ALTER TABLE draws ADD COLUMN IF NOT EXISTS source VARCHAR(50) NOT NULL DEFAULT 'alpha'`);
   await pool.query(`ALTER TABLE draws ADD COLUMN IF NOT EXISTS file_name VARCHAR(255) NOT NULL DEFAULT ''`);
-  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'user'`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_draws_source ON draws(source)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_draws_day ON draws(day_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_draws_file_name ON draws(file_name)`);
@@ -141,6 +140,7 @@ export const initDb = async () => {
       UNIQUE (country_code, mobile_number)
     )
   `);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'user'`);
 
   // predictions table
   await pool.query(`
