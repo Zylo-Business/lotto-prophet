@@ -46,6 +46,14 @@ export interface Lesson extends LessonSummary {
   level_name: string;
   prev: LessonSummary | null;
   next: LessonSummary | null;
+  lesson_number: number;
+  total_lessons: number;
+}
+
+export function estimateReadingTime(html: string | null): number {
+  if (!html) return 0;
+  const words = html.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.round(words / 200));
 }
 
 export interface UserProgress {

@@ -1,7 +1,7 @@
 import pkg from 'pg';
 import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const { Pool, types } = pkg;
 
@@ -140,6 +140,7 @@ export const initDb = async () => {
       UNIQUE (country_code, mobile_number)
     )
   `);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'user'`);
 
   // predictions table
   await pool.query(`

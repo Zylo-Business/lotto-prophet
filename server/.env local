@@ -1,0 +1,14 @@
+PORT=3001
+JWT_SECRET="tony4prophet"
+NODE_ENV="development"
+ 
+
+
+GOOGLE_DRIVE_FOLDER_ID_NLA=1r5EXrIQB0mPHkRu93mu3aooFkbxRVpgl 
+GOOGLE_DRIVE_FOLDER_ID_NLA_RUSH=1itAJWcZ_hUtXbqOL209SrxkxN-w78TSo
+GOOGLE_DRIVE_FOLDER_ID_ALPHA=10h2GQvgW7vlFSQlK30Yp--xAqn_VBWI3
+GOOGLE_DRIVE_FOLDER_ID_ALPHA_ONE=1MR6wjS-4b9neZ2Jb_AC9vVG2I6Q9T_wO
+GOOGLE_DRIVE_FOLDER_ID_ALPHA_EXPRESS=1Eu0awRWgb0dHnAgZUCeMxz0X2et_bDXd
+SIKAPAY_API_KEY=
+
+DATABASE_URL="postgresql://neondb_owner:npg_XEyuFzcOmA87@ep-delicate-rice-a4zo0wb3-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require"
