@@ -7,6 +7,7 @@ import { Image, Platform, Pressable, StyleSheet, Switch, Text, View } from 'reac
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { AuthProvider } from './context/AuthContext';
+import { useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme, LightColors } from './context/ThemeContext';
 
 // Static fallback for StyleSheet (overridden inline with dynamic colors)
@@ -17,11 +18,12 @@ function CustomDrawerContent(props: any) {
   const [toolsOpen, setToolsOpen] = React.useState(false);
   const [accountOpen, setAccountOpen] = React.useState(false);
   const [supportOpen, setSupportOpen] = React.useState(false);
+  const { logout } = useAuth();
 
   return (
     <DrawerContentScrollView
       {...props}
-      contentContainerStyle={[styles.drawerContent, { backgroundColor: colors.card }]}
+      contentContainerStyle={{ flexGrow: 1, backgroundColor: colors.card }}
     >
       {/* Header */}
       <View style={[styles.drawerHeader, { borderBottomColor: colors.border }]}>
@@ -198,7 +200,7 @@ function CustomDrawerContent(props: any) {
         <DrawerItem
           label="Sign Out"
           icon={({ size }) => <Ionicons name="log-out" size={size} color="#FF6B6B" />}
-          onPress={() => props.navigation.navigate('login')}
+          onPress={() => logout()}
           labelStyle={[styles.drawerLabel, { color: '#FF6B6B' }]}
         />
         <Text style={[styles.versionText, { color: colors.textSecondary }]}>Version 1.0.0</Text>
@@ -268,7 +270,7 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   drawerContent: {
-    flex: 1,
+    flexGrow: 1,
   },
   drawerHeader: {
     padding: 20,
@@ -303,7 +305,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   drawerItems: {
-    flex: 1,
     paddingTop: 10,
   },
   drawerLabel: {

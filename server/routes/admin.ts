@@ -1,11 +1,10 @@
 import { Router, type Request, type Response } from 'express';
 import { dbRun, dbAll, dbGet } from '../db/db.js';
-import { authenticate, type AuthRequest } from '../middlewares/auth.js';
+import { authenticateAdmin, type AuthRequest } from '../middlewares/auth.js';
 import { sendPushToAll } from '../utils/push.js';
 
 const router = Router();
 
-// ─── Display name helper (keep in sync with client) ─────────────────
 const DISPLAY_NAMES: Record<string, string> = {
   lucky: 'Lucky Tuesday',
   alpha: 'Alpha Lotto',
@@ -15,59 +14,78 @@ function getDisplayName(source: string): string {
   return DISPLAY_NAMES[source.toLowerCase()] ?? source;
 }
 
-// ─── Weekday helpers ─────────────────────────────────────────────────
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// ─── Stats ───────────────────────────────────────────────────────────────────
+
+router.get('/stats', authenticateAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const [users, draws, courses, lessons, groups, posts, pushTokens] = await Promise.all([
+      dbGet('SELECT COUNT(*) as count FROM users'),
+      dbGet('SELECT COUNT(*) as count FROM draws'),
+      dbGet('SELECT COUNT(*) as count FROM courses'),
+      dbGet('SELECT COUNT(*) as count FROM lessons'),
+      dbGet('SELECT COUNT(*) as count FROM community_groups'),
+      dbGet('SELECT COUNT(*) as count FROM community_group_posts'),
+      dbGet('SELECT COUNT(*) as count FROM push_tokens'),
+    ]);
+
+    const drawsBySrc = await dbAll(
+      'SELECT source, COUNT(*) as count FROM draws GROUP BY source ORDER BY source',
+    );
+
+    res.json({
+      users: Number(users?.count ?? 0),
+      draws: Number(draws?.count ?? 0),
+      courses: Number(courses?.count ?? 0),
+      lessons: Number(lessons?.count ?? 0),
+      groups: Number(groups?.count ?? 0),
+      posts: Number(posts?.count ?? 0),
+      push_tokens: Number(pushTokens?.count ?? 0),
+      draws_by_source: drawsBySrc.map((r) => ({ source: r.source, count: Number(r.count) })),
+    });
+  } catch (err) {
+    console.error('Stats error:', err);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
+// ─── Draws ───────────────────────────────────────────────────────────────────
 
 /**
  * POST /api/admin/draws
  * Add a new draw result. Sends push notification to all users.
- *
- * Body: {
- *   source: 'alpha' | 'lucky',
- *   event_number: number,
- *   date: 'YYYY-MM-DD',
- *   n_numbers: [n1, n2, n3, n4, n5],
- *   m_numbers?: [m1, m2, m3, m4, m5]   // optional machine numbers
- * }
  */
-router.post('/draws', authenticate, async (req: AuthRequest, res: Response) => {
+router.post('/draws', authenticateAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const { source, event_number, date, n_numbers, m_numbers } = req.body;
 
-    // ── Validation ──────────────────────────────────────────────────
     if (!source || !event_number || !date || !n_numbers) {
       res.status(400).json({ error: 'Missing required fields: source, event_number, date, n_numbers' });
       return;
     }
-
     if (!Array.isArray(n_numbers) || n_numbers.length !== 5) {
       res.status(400).json({ error: 'n_numbers must be an array of exactly 5 numbers' });
       return;
     }
-
     if (m_numbers && (!Array.isArray(m_numbers) || m_numbers.length !== 5)) {
       res.status(400).json({ error: 'm_numbers must be an array of exactly 5 numbers' });
       return;
     }
-
-    // Validate date format
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(date)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       res.status(400).json({ error: 'date must be in YYYY-MM-DD format' });
       return;
     }
 
-    // Check for duplicate draw
     const existing = await dbGet(
       'SELECT d.id FROM draws d JOIN days dy ON d.day_id = dy.id WHERE d.event_number = ? AND d.source = ?',
-      [event_number, source]
+      [event_number, source],
     );
     if (existing) {
       res.status(409).json({ error: `Draw #${event_number} for ${source} already exists` });
       return;
     }
 
-    // ── Insert day ──────────────────────────────────────────────────
     const dateObj = new Date(date + 'T00:00:00');
     const year = dateObj.getFullYear();
     const month = dateObj.getMonth() + 1;
@@ -75,67 +93,42 @@ router.post('/draws', authenticate, async (req: AuthRequest, res: Response) => {
     const weekday = dateObj.getDay();
     const weekday_name = WEEKDAY_NAMES[weekday];
 
-    // Upsert day
     let dayRow = await dbGet('SELECT id FROM days WHERE date = ?', [date]);
     if (!dayRow) {
       const result = await dbRun(
         'INSERT INTO days (date, year, month, day, weekday, weekday_name) VALUES (?, ?, ?, ?, ?, ?)',
-        [date, year, month, day, weekday, weekday_name]
+        [date, year, month, day, weekday, weekday_name],
       );
       dayRow = { id: result.lastID };
     }
 
-    // ── Insert draw ─────────────────────────────────────────────────
     const drawResult = await dbRun(
       'INSERT INTO draws (event_number, day_id, source) VALUES (?, ?, ?)',
-      [event_number, dayRow.id, source]
+      [event_number, dayRow.id, source],
     );
     const drawId = drawResult.lastID;
 
-    // ── Insert N number set ─────────────────────────────────────────
-    const nSetResult = await dbRun(
-      'INSERT INTO number_sets (draw_id, set_type) VALUES (?, ?)',
-      [drawId, 'N']
-    );
+    const nSetResult = await dbRun('INSERT INTO number_sets (draw_id, set_type) VALUES (?, ?)', [drawId, 'N']);
     for (let i = 0; i < 5; i++) {
-      await dbRun(
-        'INSERT INTO numbers (number_set_id, position, value) VALUES (?, ?, ?)',
-        [nSetResult.lastID, i + 1, n_numbers[i]]
-      );
+      await dbRun('INSERT INTO numbers (number_set_id, position, value) VALUES (?, ?, ?)', [nSetResult.lastID, i + 1, n_numbers[i]]);
     }
 
-    // ── Insert M number set (if provided) ───────────────────────────
     if (m_numbers) {
-      const mSetResult = await dbRun(
-        'INSERT INTO number_sets (draw_id, set_type) VALUES (?, ?)',
-        [drawId, 'M']
-      );
+      const mSetResult = await dbRun('INSERT INTO number_sets (draw_id, set_type) VALUES (?, ?)', [drawId, 'M']);
       for (let i = 0; i < 5; i++) {
-        await dbRun(
-          'INSERT INTO numbers (number_set_id, position, value) VALUES (?, ?, ?)',
-          [mSetResult.lastID, i + 1, m_numbers[i]]
-        );
+        await dbRun('INSERT INTO numbers (number_set_id, position, value) VALUES (?, ?, ?)', [mSetResult.lastID, i + 1, m_numbers[i]]);
       }
     }
 
-    // ── Send push notification ──────────────────────────────────────
     const displayName = getDisplayName(source);
-    const numbersStr = n_numbers.join(', ');
-    const pushTitle = `New ${displayName} Draw #${event_number}`;
-    const pushBody = m_numbers
-      ? `Draw: ${numbersStr} | Machine: ${m_numbers.join(', ')}`
-      : `Draw: ${numbersStr}`;
-
-    // Fire & forget — don't block the response
-    sendPushToAll(pushTitle, pushBody, {
-      type: 'new_draw',
-      source,
-      event_number,
-    }).then((result) => {
-      console.log(`[admin] Push sent: ${result.sent} ok, ${result.failed} failed`);
-    }).catch((err) => {
-      console.error('[admin] Push error:', err);
-    });
+    sendPushToAll(
+      `New ${displayName} Draw #${event_number}`,
+      m_numbers
+        ? `Draw: ${n_numbers.join(', ')} | Machine: ${m_numbers.join(', ')}`
+        : `Draw: ${n_numbers.join(', ')}`,
+      { type: 'new_draw', source, event_number },
+    ).then((r) => console.log(`[admin] Push: ${r.sent} ok, ${r.failed} failed`))
+      .catch((e) => console.error('[admin] Push error:', e));
 
     res.status(201).json({
       message: `Draw #${event_number} for ${displayName} added successfully`,
@@ -149,16 +142,12 @@ router.post('/draws', authenticate, async (req: AuthRequest, res: Response) => {
 
 /**
  * GET /api/admin/draws/latest
- * Get the latest event number for each source (for auto-incrementing in the admin UI).
  */
-router.get('/draws/latest', authenticate, async (_req: AuthRequest, res: Response) => {
+router.get('/draws/latest', authenticateAdmin, async (_req: AuthRequest, res: Response) => {
   try {
-    const latest = await dbAll(`
-      SELECT source, MAX(event_number) as latest_event
-      FROM draws
-      GROUP BY source
-      ORDER BY source
-    `);
+    const latest = await dbAll(
+      'SELECT source, MAX(event_number) as latest_event FROM draws GROUP BY source ORDER BY source',
+    );
     res.json(latest);
   } catch (err) {
     console.error('Error fetching latest draws:', err);
@@ -167,29 +156,417 @@ router.get('/draws/latest', authenticate, async (_req: AuthRequest, res: Respons
 });
 
 /**
+ * GET /api/admin/draws/all?source=&limit=&offset=
+ */
+router.get('/draws/all', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const source = req.query.source as string | undefined;
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 50));
+    const offset = Math.max(0, parseInt(req.query.offset as string) || 0);
+
+    const filters: string[] = [];
+    const params: any[] = [];
+    if (source) { filters.push('source = ?'); params.push(source); }
+
+    const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+
+    const countRow = await dbGet(`SELECT COUNT(*) as count FROM v_draws_flat ${where}`, params);
+    const draws = await dbAll(
+      `SELECT * FROM v_draws_flat ${where} ORDER BY event_number DESC LIMIT ${limit} OFFSET ${offset}`,
+      params,
+    );
+
+    res.json({ total: Number(countRow?.count ?? 0), limit, offset, draws });
+  } catch (err) {
+    console.error('Error fetching all draws:', err);
+    res.status(500).json({ error: 'Failed to fetch draws' });
+  }
+});
+
+/**
+ * DELETE /api/admin/draws/:id
+ */
+router.delete('/draws/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) { res.status(400).json({ error: 'Invalid draw ID' }); return; }
+
+    const draw = await dbGet('SELECT id FROM draws WHERE id = ?', [id]);
+    if (!draw) { res.status(404).json({ error: 'Draw not found' }); return; }
+
+    await dbRun('DELETE FROM draws WHERE id = ?', [id]);
+    res.json({ message: 'Draw deleted' });
+  } catch (err) {
+    console.error('Error deleting draw:', err);
+    res.status(500).json({ error: 'Failed to delete draw' });
+  }
+});
+
+// ─── Users ───────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/users?search=&limit=&offset=
+ */
+router.get('/users', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const search = (req.query.search as string) || '';
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 50));
+    const offset = Math.max(0, parseInt(req.query.offset as string) || 0);
+
+    const likeParam = `%${search}%`;
+    const where = search
+      ? 'WHERE firstname ILIKE ? OR surname ILIKE ? OR email ILIKE ?'
+      : '';
+    const params = search ? [likeParam, likeParam, likeParam] : [];
+
+    const countRow = await dbGet(
+      `SELECT COUNT(*) as count FROM users ${where}`,
+      params,
+    );
+    const users = await dbAll(
+      `SELECT id, firstname, surname, email, country_code, mobile_number, created_at FROM users ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+      params,
+    );
+
+    res.json({ total: Number(countRow?.count ?? 0), limit, offset, users });
+  } catch (err) {
+    console.error('Error fetching users:', err);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
+/**
+ * DELETE /api/admin/users/:id
+ */
+router.delete('/users/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) { res.status(400).json({ error: 'Invalid user ID' }); return; }
+
+    const user = await dbGet('SELECT id FROM users WHERE id = ?', [id]);
+    if (!user) { res.status(404).json({ error: 'User not found' }); return; }
+
+    await dbRun('DELETE FROM users WHERE id = ?', [id]);
+    res.json({ message: 'User deleted' });
+  } catch (err) {
+    console.error('Error deleting user:', err);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+// ─── Community ───────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/community/groups?limit=&offset=
+ */
+router.get('/community/groups', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 50));
+    const offset = Math.max(0, parseInt(req.query.offset as string) || 0);
+
+    const countRow = await dbGet('SELECT COUNT(*) as count FROM community_groups');
+    const groups = await dbAll(
+      `SELECT g.*, u.firstname, u.surname,
+        (SELECT COUNT(*) FROM community_group_members gm WHERE gm.group_id = g.id) AS member_count,
+        (SELECT COUNT(*) FROM community_group_posts gp WHERE gp.group_id = g.id) AS post_count
+       FROM community_groups g
+       JOIN users u ON u.id = g.owner_id
+       ORDER BY g.created_at DESC
+       LIMIT ${limit} OFFSET ${offset}`,
+    );
+
+    res.json({ total: Number(countRow?.count ?? 0), limit, offset, groups });
+  } catch (err) {
+    console.error('Error fetching groups:', err);
+    res.status(500).json({ error: 'Failed to fetch groups' });
+  }
+});
+
+/**
+ * DELETE /api/admin/community/groups/:id
+ */
+router.delete('/community/groups/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) { res.status(400).json({ error: 'Invalid group ID' }); return; }
+
+    await dbRun('DELETE FROM community_groups WHERE id = ?', [id]);
+    res.json({ message: 'Group deleted' });
+  } catch (err) {
+    console.error('Error deleting group:', err);
+    res.status(500).json({ error: 'Failed to delete group' });
+  }
+});
+
+/**
+ * GET /api/admin/community/posts?limit=&offset=
+ */
+router.get('/community/posts', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 50));
+    const offset = Math.max(0, parseInt(req.query.offset as string) || 0);
+
+    const countRow = await dbGet('SELECT COUNT(*) as count FROM community_group_posts');
+    const posts = await dbAll(
+      `SELECT p.*, u.firstname, u.surname, g.name AS group_name,
+        (SELECT COUNT(*) FROM community_post_comments c WHERE c.post_id = p.id) AS comment_count
+       FROM community_group_posts p
+       JOIN users u ON u.id = p.user_id
+       JOIN community_groups g ON g.id = p.group_id
+       ORDER BY p.created_at DESC
+       LIMIT ${limit} OFFSET ${offset}`,
+    );
+
+    res.json({ total: Number(countRow?.count ?? 0), limit, offset, posts });
+  } catch (err) {
+    console.error('Error fetching posts:', err);
+    res.status(500).json({ error: 'Failed to fetch posts' });
+  }
+});
+
+/**
+ * DELETE /api/admin/community/posts/:id
+ */
+router.delete('/community/posts/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) { res.status(400).json({ error: 'Invalid post ID' }); return; }
+
+    await dbRun('DELETE FROM community_group_posts WHERE id = ?', [id]);
+    res.json({ message: 'Post deleted' });
+  } catch (err) {
+    console.error('Error deleting post:', err);
+    res.status(500).json({ error: 'Failed to delete post' });
+  }
+});
+
+// ─── University ──────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/university/courses
+ */
+router.get('/university/courses', authenticateAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const courses = await dbAll(
+      `SELECT c.*,
+        (SELECT COUNT(*) FROM lessons l WHERE l.course_id = c.id) AS lesson_count
+       FROM courses c
+       ORDER BY c.sort_order, c.level`,
+    );
+    res.json(courses);
+  } catch (err) {
+    console.error('Error fetching courses:', err);
+    res.status(500).json({ error: 'Failed to fetch courses' });
+  }
+});
+
+/**
+ * POST /api/admin/university/courses
+ */
+router.post('/university/courses', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { level, level_name, title, slug, description, icon, sort_order, is_published } = req.body;
+    if (!level || !title || !slug) {
+      res.status(400).json({ error: 'level, title and slug are required' });
+      return;
+    }
+    const result = await dbRun(
+      'INSERT INTO courses (level, level_name, title, slug, description, icon, sort_order, is_published) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [level, level_name || '', title, slug, description || null, icon || '📚', sort_order || 0, is_published ? 1 : 0],
+    );
+    const course = await dbGet('SELECT * FROM courses WHERE id = ?', [result.lastID]);
+    res.status(201).json(course);
+  } catch (err) {
+    console.error('Error creating course:', err);
+    res.status(500).json({ error: 'Failed to create course' });
+  }
+});
+
+/**
+ * PUT /api/admin/university/courses/:id
+ */
+router.put('/university/courses/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const { level, level_name, title, slug, description, icon, sort_order, is_published } = req.body;
+
+    await dbRun(
+      'UPDATE courses SET level = ?, level_name = ?, title = ?, slug = ?, description = ?, icon = ?, sort_order = ?, is_published = ? WHERE id = ?',
+      [level, level_name, title, slug, description, icon, sort_order, is_published ? 1 : 0, id],
+    );
+    const course = await dbGet('SELECT * FROM courses WHERE id = ?', [id]);
+    res.json(course);
+  } catch (err) {
+    console.error('Error updating course:', err);
+    res.status(500).json({ error: 'Failed to update course' });
+  }
+});
+
+/**
+ * DELETE /api/admin/university/courses/:id
+ */
+router.delete('/university/courses/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    await dbRun('DELETE FROM courses WHERE id = ?', [id]);
+    res.json({ message: 'Course deleted' });
+  } catch (err) {
+    console.error('Error deleting course:', err);
+    res.status(500).json({ error: 'Failed to delete course' });
+  }
+});
+
+/**
+ * GET /api/admin/university/courses/:id/lessons
+ */
+router.get('/university/courses/:id/lessons', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const courseId = Number(req.params.id);
+    const lessons = await dbAll(
+      'SELECT * FROM lessons WHERE course_id = ? ORDER BY sort_order',
+      [courseId],
+    );
+    res.json(lessons);
+  } catch (err) {
+    console.error('Error fetching lessons:', err);
+    res.status(500).json({ error: 'Failed to fetch lessons' });
+  }
+});
+
+/**
+ * POST /api/admin/university/lessons
+ */
+router.post('/university/lessons', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { course_id, title, slug, content, sort_order, is_published } = req.body;
+    if (!course_id || !title || !slug) {
+      res.status(400).json({ error: 'course_id, title and slug are required' });
+      return;
+    }
+    const result = await dbRun(
+      'INSERT INTO lessons (course_id, title, slug, content, sort_order, is_published) VALUES (?, ?, ?, ?, ?, ?)',
+      [course_id, title, slug, content || null, sort_order || 0, is_published ? 1 : 0],
+    );
+    const lesson = await dbGet('SELECT * FROM lessons WHERE id = ?', [result.lastID]);
+    res.status(201).json(lesson);
+  } catch (err) {
+    console.error('Error creating lesson:', err);
+    res.status(500).json({ error: 'Failed to create lesson' });
+  }
+});
+
+/**
+ * PUT /api/admin/university/lessons/:id
+ */
+router.put('/university/lessons/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const { title, slug, content, sort_order, is_published } = req.body;
+
+    await dbRun(
+      'UPDATE lessons SET title = ?, slug = ?, content = ?, sort_order = ?, is_published = ? WHERE id = ?',
+      [title, slug, content, sort_order, is_published ? 1 : 0, id],
+    );
+    const lesson = await dbGet('SELECT * FROM lessons WHERE id = ?', [id]);
+    res.json(lesson);
+  } catch (err) {
+    console.error('Error updating lesson:', err);
+    res.status(500).json({ error: 'Failed to update lesson' });
+  }
+});
+
+/**
+ * DELETE /api/admin/university/lessons/:id
+ */
+router.delete('/university/lessons/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    await dbRun('DELETE FROM lessons WHERE id = ?', [id]);
+    res.json({ message: 'Lesson deleted' });
+  } catch (err) {
+    console.error('Error deleting lesson:', err);
+    res.status(500).json({ error: 'Failed to delete lesson' });
+  }
+});
+
+// ─── Push Notifications ──────────────────────────────────────────────────────
+
+/**
  * POST /api/admin/push-token
  * Register a device push token for notifications.
- * Body: { token: string, platform?: string }
  */
 router.post('/push-token', async (req: Request, res: Response) => {
   try {
     const { token, platform } = req.body;
+    if (!token) { res.status(400).json({ error: 'Push token is required' }); return; }
 
-    if (!token) {
-      res.status(400).json({ error: 'Push token is required' });
-      return;
-    }
-
-    // Upsert — update platform if token already exists
     await dbRun(
       'INSERT INTO push_tokens (token, platform) VALUES (?, ?) ON CONFLICT (token) DO UPDATE SET platform = EXCLUDED.platform',
-      [token, platform || 'unknown']
+      [token, platform || 'unknown'],
     ).catch(() => {});
 
     res.json({ message: 'Push token registered' });
   } catch (err) {
     console.error('Error registering push token:', err);
     res.status(500).json({ error: 'Failed to register push token' });
+  }
+});
+
+/**
+ * GET /api/admin/push-tokens?limit=&offset=
+ */
+router.get('/push-tokens', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 50));
+    const offset = Math.max(0, parseInt(req.query.offset as string) || 0);
+
+    const countRow = await dbGet('SELECT COUNT(*) as count FROM push_tokens');
+    const tokens = await dbAll(
+      `SELECT pt.*, u.firstname, u.surname, u.email
+       FROM push_tokens pt
+       LEFT JOIN users u ON u.id = pt.user_id
+       ORDER BY pt.created_at DESC
+       LIMIT ${limit} OFFSET ${offset}`,
+    );
+
+    res.json({ total: Number(countRow?.count ?? 0), limit, offset, tokens });
+  } catch (err) {
+    console.error('Error fetching push tokens:', err);
+    res.status(500).json({ error: 'Failed to fetch push tokens' });
+  }
+});
+
+/**
+ * DELETE /api/admin/push-tokens/:id
+ */
+router.delete('/push-tokens/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    await dbRun('DELETE FROM push_tokens WHERE id = ?', [id]);
+    res.json({ message: 'Token deleted' });
+  } catch (err) {
+    console.error('Error deleting token:', err);
+    res.status(500).json({ error: 'Failed to delete token' });
+  }
+});
+
+/**
+ * POST /api/admin/notifications/broadcast
+ * Broadcast a custom push notification to all registered devices.
+ */
+router.post('/notifications/broadcast', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { title, body, data } = req.body;
+    if (!title || !body) {
+      res.status(400).json({ error: 'title and body are required' });
+      return;
+    }
+
+    const result = await sendPushToAll(title, body, data || {});
+    res.json({ message: `Notification sent`, sent: result.sent, failed: result.failed });
+  } catch (err) {
+    console.error('Error broadcasting notification:', err);
+    res.status(500).json({ error: 'Failed to broadcast notification' });
   }
 });
 

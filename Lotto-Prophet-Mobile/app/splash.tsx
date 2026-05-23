@@ -77,8 +77,7 @@ const createStyles = (COLORS: AppColors) => StyleSheet.create({
     marginBottom: 24,
   },
   version: {
-    position: 'absolute',
-    bottom: 40,
+    marginTop: 24,
     color: COLORS.textSecondary,
     fontSize: 14,
   },

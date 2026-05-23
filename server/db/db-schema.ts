@@ -40,6 +40,7 @@ export interface User {
   referral_code: string | null;
   password_hash: string;
   date_of_birth: string; // YYYY-MM-DD
+  role: 'user' | 'admin';
   reset_token: string | null;
   reset_token_expires: string | null;
   created_at: string;

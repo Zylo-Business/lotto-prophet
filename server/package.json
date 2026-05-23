@@ -15,7 +15,8 @@
     "seed:clear": "tsx utils/seed-csv.ts --clear",
     "sync:drive": "tsx utils/sync-google-drive.ts",
     "schedule:sync": "tsx utils/schedule-sync.ts",
-    "migrate": "tsx utils/migrate-mysql-to-postgres.ts"
+    "migrate": "tsx utils/migrate-mysql-to-postgres.ts",
+    "admin:create": "tsx utils/create-admin.ts"
   },
   "keywords": [],
   "author": "",
