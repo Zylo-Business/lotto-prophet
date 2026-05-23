@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { dbRun, dbGet } from '../db/db.js';
 import { config } from '../config/index.js';
+import { authenticate, type AuthRequest } from '../middlewares/auth.js';
 import type {
   RegisterRequest,
   LoginRequest,
@@ -43,6 +44,13 @@ const sanitizeUser = (user: User): Omit<User, 'password_hash' | 'reset_token' | 
   const { password_hash, reset_token, reset_token_expires, ...safeUser } = user;
   return safeUser;
 };
+
+const signToken = (user: User): string =>
+  jwt.sign(
+    { id: user.id, email: user.email, role: user.role ?? 'user' },
+    config.jwt.secret,
+    { expiresIn: config.jwt.expiresInSeconds },
+  );
 
 // ─── POST /api/auth/register ─────────────────────────────────────────
 
@@ -127,11 +135,7 @@ router.post('/register', async (req: Request, res: Response) => {
     const newUser: User = await dbGet('SELECT * FROM users WHERE id = ?', [result.lastID]);
 
     // Generate JWT
-    const token = jwt.sign(
-      { id: newUser.id, email: newUser.email },
-      config.jwt.secret,
-      { expiresIn: config.jwt.expiresInSeconds }
-    );
+    const token = signToken(newUser);
 
     res.status(201).json({
       message: 'Registration successful.',
@@ -179,11 +183,7 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 
     // Generate JWT
-    const token = jwt.sign(
-      { id: user.id, email: user.email },
-      config.jwt.secret,
-      { expiresIn: config.jwt.expiresInSeconds }
-    );
+    const token = signToken(user);
 
     res.json({
       message: 'Login successful.',
@@ -279,6 +279,85 @@ router.post('/reset-password', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Reset password error:', error);
     res.status(500).json({ error: 'Failed to reset password. Please try again.' });
+  }
+});
+
+// ─── GET /api/auth/me ────────────────────────────────────────────────
+
+router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await dbGet('SELECT * FROM users WHERE id = ?', [req.user!.id]);
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    const { password_hash, reset_token, reset_token_expires, ...safeUser } = user as any;
+    res.json({ user: safeUser });
+  } catch (error) {
+    console.error('Get current user error:', error);
+    res.status(500).json({ error: 'Failed to retrieve user.' });
+  }
+});
+
+// ─── PUT /api/auth/profile ───────────────────────────────────────────
+
+router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { firstname, surname, country_code, mobile_number, date_of_birth } = req.body;
+
+    if (!firstname || !surname || !country_code || !mobile_number || !date_of_birth) {
+      return res.status(400).json({ error: 'All fields are required.' });
+    }
+    if (firstname.trim().length < 2 || surname.trim().length < 2) {
+      return res.status(400).json({ error: 'Firstname and surname must be at least 2 characters.' });
+    }
+    if (!isValidCountryCode(country_code)) {
+      return res.status(400).json({ error: 'Invalid country code.' });
+    }
+    if (!isValidMobile(mobile_number)) {
+      return res.status(400).json({ error: 'Mobile number must be 10 digits.' });
+    }
+    if (!isValidDateOfBirth(date_of_birth)) {
+      return res.status(400).json({ error: 'Invalid date of birth. Must be 18+.' });
+    }
+
+    await dbRun(
+      'UPDATE users SET firstname = ?, surname = ?, country_code = ?, mobile_number = ?, date_of_birth = ? WHERE id = ?',
+      [firstname.trim(), surname.trim(), country_code, mobile_number, date_of_birth, req.user!.id],
+    );
+
+    const updated = await dbGet('SELECT * FROM users WHERE id = ?', [req.user!.id]);
+    const { password_hash, reset_token, reset_token_expires, ...safeUser } = updated as any;
+    res.json({ message: 'Profile updated successfully.', user: safeUser });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'Failed to update profile.' });
+  }
+});
+
+// ─── PUT /api/auth/change-password ───────────────────────────────────
+
+router.put('/change-password', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const { current_password, new_password } = req.body;
+
+    if (!current_password || !new_password) {
+      return res.status(400).json({ error: 'Current and new passwords are required.' });
+    }
+    if (new_password.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+    }
+
+    const user = await dbGet('SELECT * FROM users WHERE id = ?', [req.user!.id]);
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
+    const valid = await bcrypt.compare(current_password, (user as any).password_hash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect.' });
+
+    const hash = await bcrypt.hash(new_password, 12);
+    await dbRun('UPDATE users SET password_hash = ? WHERE id = ?', [hash, req.user!.id]);
+
+    res.json({ message: 'Password changed successfully.' });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ error: 'Failed to change password.' });
   }
 });
 

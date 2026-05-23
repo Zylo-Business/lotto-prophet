@@ -3,7 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
-import * as SecureStore from 'expo-secure-store';
+import { storage } from './lib/storage';
 import { useTheme, type AppColors } from './context/ThemeContext';
 import {
   fetchLesson,
@@ -49,7 +49,7 @@ export default function LessonDetail() {
 
   const handleComplete = async () => {
     if (!lesson) return;
-    const token = await SecureStore.getItemAsync('token');
+    const token = await storage.getItem('token');
     if (!token) return;
 
     try {

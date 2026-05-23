@@ -3,7 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import * as SecureStore from 'expo-secure-store';
+import { storage } from './lib/storage';
 import { useTheme, type AppColors } from './context/ThemeContext';
 import {
   fetchCourse,
@@ -35,7 +35,7 @@ export default function CourseDetail() {
       setCourse(data);
 
       // Try loading progress
-      const token = await SecureStore.getItemAsync('token');
+      const token = await storage.getItem('token');
       if (token) {
         try {
           const prog = await fetchProgress(token);

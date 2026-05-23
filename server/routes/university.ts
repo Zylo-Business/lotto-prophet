@@ -127,7 +127,13 @@ router.get('/lessons/:courseSlug/:lessonSlug', async (req: Request, res: Respons
     const prev = currentIndex > 0 ? siblings[currentIndex - 1] : null;
     const next = currentIndex < siblings.length - 1 ? siblings[currentIndex + 1] : null;
 
-    res.json({ ...lesson, prev, next });
+    res.json({
+      ...lesson,
+      prev,
+      next,
+      lesson_number: currentIndex + 1,
+      total_lessons: siblings.length,
+    });
   } catch (err) {
     console.error('Error fetching lesson:', err);
     res.status(500).json({ error: 'Failed to fetch lesson' });

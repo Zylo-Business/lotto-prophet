@@ -136,6 +136,18 @@ export async function checkServerHealth(): Promise<boolean> {
 
 // ─── API functions ───────────────────────────────────────────────────
 
+export async function getCurrentUser(token: string): Promise<User> {
+  try {
+    const { data } = await axios.get<{ user: User }>(
+      `${BASE_URL}/api/auth/me`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    return data.user;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to restore user session'));
+  }
+}
+
 export async function login(
   identifier: string,
   password: string,
@@ -191,6 +203,43 @@ export async function forgotPassword(
     return data;
   } catch (err) {
     throw new Error(extractError(err, 'Failed to send reset request'));
+  }
+}
+
+export type ProfileUpdateData = {
+  firstname: string;
+  surname: string;
+  country_code: string;
+  mobile_number: string;
+  date_of_birth: string;
+};
+
+export async function updateProfile(token: string, data: ProfileUpdateData): Promise<User> {
+  try {
+    const { data: res } = await axios.put<{ message: string; user: User }>(
+      `${BASE_URL}/api/auth/profile`,
+      data,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    return res.user;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to update profile'));
+  }
+}
+
+export async function changePassword(
+  token: string,
+  current_password: string,
+  new_password: string,
+): Promise<void> {
+  try {
+    await axios.put(
+      `${BASE_URL}/api/auth/change-password`,
+      { current_password, new_password },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to change password'));
   }
 }
 
