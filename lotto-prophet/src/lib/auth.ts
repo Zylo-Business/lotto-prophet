@@ -13,6 +13,7 @@ export type User = {
   date_of_birth: string;
   role: 'user' | 'admin';
   created_at: string;
+  avatar_url?: string | null;
 };
 
 export type AuthResponse = {
@@ -151,6 +152,19 @@ export async function updateProfile(
   } catch (err) {
     throw new Error(extractError(err, "Failed to update profile"));
   }
+}
+
+export async function uploadAvatar(token: string, file: File): Promise<User> {
+  const formData = new FormData();
+  formData.append('avatar', file);
+  const response = await fetch(`${BASE_URL}/api/auth/avatar`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Failed to upload avatar');
+  return data.user as User;
 }
 
 export async function changePassword(

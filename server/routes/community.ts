@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { authenticate, AuthRequest } from '../middlewares/auth.js';
 import { dbRun, dbAll, dbGet } from '../db/db.js';
+import { postImageUpload, postImagesUpload } from '../middlewares/upload.js';
 
 const router = Router();
 
@@ -214,6 +215,56 @@ router.post('/groups/:groupId/members/:memberId/ban', authenticate, async (req: 
   }
 });
 
+router.delete('/groups/:groupId/members/:memberId', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const groupId = Number(req.params.groupId);
+    const memberId = Number(req.params.memberId);
+    if (!groupId || Number.isNaN(groupId) || !memberId || Number.isNaN(memberId)) return res.status(400).json({ error: 'Invalid IDs' });
+
+    const requester = await getGroupMembership(groupId, userId);
+    if (!userCanModerate(requester)) return res.status(403).json({ error: 'Only moderators/owners can remove members.' });
+
+    const target = await getGroupMembership(groupId, memberId);
+    if (!target) return res.status(404).json({ error: 'Member not found.' });
+    if (target.role === 'owner') return res.status(403).json({ error: 'Cannot remove the group owner.' });
+    if (target.role === 'moderator' && requester.role !== 'owner') return res.status(403).json({ error: 'Only the owner can remove moderators.' });
+
+    await dbRun(`DELETE FROM community_group_members WHERE group_id = ? AND user_id = ?`, [groupId, memberId]);
+    return res.json({ message: 'Member removed.' });
+  } catch (error) {
+    console.error('REMOVE MEMBER error:', error);
+    return res.status(500).json({ error: 'Failed to remove member' });
+  }
+});
+
+router.put('/groups/:groupId', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const groupId = Number(req.params.groupId);
+    if (!groupId || Number.isNaN(groupId)) return res.status(400).json({ error: 'Invalid group ID' });
+
+    const requester = await getGroupMembership(groupId, userId);
+    if (!userIsOwner(requester)) return res.status(403).json({ error: 'Only the group owner can edit this group.' });
+
+    const { name, description, is_private, join_code } = req.body;
+    if (!name || name.trim().length < 3) return res.status(400).json({ error: 'Group name must be at least 3 characters.' });
+    if (is_private && (!join_code || join_code.trim().length < 4)) return res.status(400).json({ error: 'Private groups require a join code of at least 4 characters.' });
+
+    await dbRun(
+      `UPDATE community_groups SET name = ?, description = ?, is_private = ?, join_code = ? WHERE id = ?`,
+      [name.trim(), description?.trim() ?? '', is_private ? 1 : 0, is_private ? join_code.trim() : null, groupId]
+    );
+    const group = await dbGet(`SELECT * FROM community_groups WHERE id = ?`, [groupId]);
+    return res.json({ group });
+  } catch (error) {
+    console.error('PUT /groups/:groupId error:', error);
+    return res.status(500).json({ error: 'Failed to update group' });
+  }
+});
+
 router.get('/groups/:groupId/posts', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
@@ -235,20 +286,45 @@ router.get('/groups/:groupId/posts', authenticate, async (req: AuthRequest, res:
     }
 
     const posts = await dbAll(`
-      SELECT p.*, u.firstname, u.surname,
+      SELECT p.*, u.firstname, u.surname, u.avatar_url,
       (SELECT COUNT(*) FROM community_post_comments c WHERE c.post_id = p.id) AS comment_count,
       (SELECT COUNT(*) FROM community_post_likes l WHERE l.post_id = p.id) AS like_count,
-      (EXISTS(SELECT 1 FROM community_post_likes l WHERE l.post_id = p.id AND l.user_id = ?))::int AS liked_by_me
+      (EXISTS(SELECT 1 FROM community_post_likes l WHERE l.post_id = p.id AND l.user_id = ?))::int AS liked_by_me,
+      (SELECT role FROM community_group_members gm WHERE gm.group_id = p.group_id AND gm.user_id = ?) AS my_group_role,
+      COALESCE(
+        (SELECT json_agg(pi.image_url ORDER BY pi.sort_order) FROM community_post_images pi WHERE pi.post_id = p.id),
+        '[]'::json
+      ) AS image_urls
       FROM community_group_posts p
       JOIN users u ON u.id = p.user_id
       WHERE p.group_id = ?
       ORDER BY p.is_pinned DESC, p.created_at DESC
-    `, [userId, groupId]);
+    `, [userId, userId, groupId]);
 
     return res.json({ posts });
   } catch (error) {
     console.error('GET /groups/:groupId/posts error:', error);
     return res.status(500).json({ error: 'Failed to fetch posts' });
+  }
+});
+
+router.get('/posts/:postId/comments', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const postId = Number(req.params.postId);
+    if (!postId || Number.isNaN(postId)) return res.status(400).json({ error: 'Invalid post ID' });
+
+    const comments = await dbAll(`
+      SELECT c.*, u.firstname, u.surname, u.avatar_url
+      FROM community_post_comments c
+      JOIN users u ON u.id = c.user_id
+      WHERE c.post_id = ?
+      ORDER BY c.created_at ASC
+    `, [postId]);
+
+    return res.json({ comments });
+  } catch (error) {
+    console.error('GET /posts/:postId/comments error:', error);
+    return res.status(500).json({ error: 'Failed to fetch comments' });
   }
 });
 
@@ -288,9 +364,13 @@ router.delete('/posts/:postId/like', authenticate, async (req: AuthRequest, res:
 router.get('/trending', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const posts = await dbAll(`
-      SELECT p.*, u.firstname, u.surname, g.name AS group_name,
+      SELECT p.*, u.firstname, u.surname, u.avatar_url, g.name AS group_name,
         (SELECT COUNT(*) FROM community_post_likes l WHERE l.post_id = p.id) AS like_count,
-        (SELECT COUNT(*) FROM community_post_comments c WHERE c.post_id = p.id) AS comment_count
+        (SELECT COUNT(*) FROM community_post_comments c WHERE c.post_id = p.id) AS comment_count,
+        COALESCE(
+          (SELECT json_agg(pi.image_url ORDER BY pi.sort_order) FROM community_post_images pi WHERE pi.post_id = p.id),
+          '[]'::json
+        ) AS image_urls
       FROM community_group_posts p
       JOIN users u ON p.user_id = u.id
       JOIN community_groups g ON p.group_id = g.id
@@ -311,18 +391,23 @@ router.get('/feed', authenticate, async (req: AuthRequest, res: Response) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
     const posts = await dbAll(`
-      SELECT p.*, u.firstname, u.surname,
+      SELECT p.*, u.firstname, u.surname, u.avatar_url,
       g.name AS group_name,
       (SELECT COUNT(*) FROM community_post_likes l WHERE l.post_id = p.id) AS like_count,
       (SELECT COUNT(*) FROM community_post_comments c WHERE c.post_id = p.id) AS comment_count,
-      (EXISTS(SELECT 1 FROM community_post_likes l WHERE l.post_id = p.id AND l.user_id = ?))::int AS liked_by_me
+      (EXISTS(SELECT 1 FROM community_post_likes l WHERE l.post_id = p.id AND l.user_id = ?))::int AS liked_by_me,
+      (SELECT role FROM community_group_members gm WHERE gm.group_id = p.group_id AND gm.user_id = ?) AS my_group_role,
+      COALESCE(
+        (SELECT json_agg(pi.image_url ORDER BY pi.sort_order) FROM community_post_images pi WHERE pi.post_id = p.id),
+        '[]'::json
+      ) AS image_urls
       FROM community_group_posts p
       JOIN community_groups g ON g.id = p.group_id
       JOIN community_group_members m ON m.group_id = p.group_id AND m.user_id = ?
       JOIN users u ON u.id = p.user_id
       ORDER BY p.is_pinned DESC, p.created_at DESC
       LIMIT 100
-    `, [userId, userId]);
+    `, [userId, userId, userId]);
 
     return res.json({ posts });
   } catch (error) {
@@ -359,45 +444,111 @@ router.delete('/groups/:groupId/posts/:postId', authenticate, async (req: AuthRe
   }
 });
 
-router.post('/groups/:groupId/posts', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+router.put('/posts/:postId', authenticate, (req: AuthRequest, res: Response) => {
+  postImagesUpload(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    try {
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const groupId = Number(req.params.groupId);
-    const { title, body, post_type, predicted_numbers } = req.body;
+      const postId = Number(req.params.postId);
+      if (!postId || Number.isNaN(postId)) return res.status(400).json({ error: 'Invalid post ID' });
 
-    if (!groupId || Number.isNaN(groupId)) {
-      return res.status(400).json({ error: 'Invalid group ID' });
-    }
-    if (!title || title.trim().length < 1) {
-      return res.status(400).json({ error: 'Post title must be at least 1 character.' });
-    }
-    if (!body || body.trim().length < 2) {
-      return res.status(400).json({ error: 'Post body must be at least 2 characters.' });
-    }
+      const post = await dbGet(`SELECT * FROM community_group_posts WHERE id = ?`, [postId]);
+      if (!post) return res.status(404).json({ error: 'Post not found' });
+      if (post.user_id !== userId) return res.status(403).json({ error: 'Only the post owner can edit this post.' });
 
-    const group = await dbGet(`SELECT * FROM community_groups WHERE id = ?`, [groupId]);
-    if (!group) return res.status(404).json({ error: 'Group not found' });
+      const { title, body, post_type, predicted_numbers } = req.body;
+      if (!title || title.trim().length < 1) return res.status(400).json({ error: 'Post title must be at least 1 character.' });
+      if (!body || body.trim().length < 2) return res.status(400).json({ error: 'Post body must be at least 2 characters.' });
 
-    if (group.is_private) {
-      const membership = await dbGet(`SELECT id FROM community_group_members WHERE group_id = ? AND user_id = ?`, [groupId, userId]);
-      if (!membership) {
-        return res.status(403).json({ error: 'Access denied. Join the group first.' });
+      await dbRun(`
+        UPDATE community_group_posts
+        SET title = ?, body = ?, post_type = ?, predicted_numbers = ?
+        WHERE id = ?
+      `, [title.trim(), body.trim(), post_type === 'forecast' ? 'forecast' : 'discussion', predicted_numbers?.trim() || null, postId]);
+
+      const files = (req.files as Express.Multer.File[]) ?? [];
+      if (files.length > 0) {
+        await dbRun(`DELETE FROM community_post_images WHERE post_id = ?`, [postId]);
+        for (let i = 0; i < files.length; i++) {
+          await dbRun(`INSERT INTO community_post_images (post_id, image_url, sort_order) VALUES (?, ?, ?)`,
+            [postId, `/uploads/posts/${files[i].filename}`, i]);
+        }
       }
+
+      const updated = await dbGet(`
+        SELECT p.*, u.firstname, u.surname, u.avatar_url,
+          COALESCE(
+            (SELECT json_agg(pi.image_url ORDER BY pi.sort_order) FROM community_post_images pi WHERE pi.post_id = p.id),
+            '[]'::json
+          ) AS image_urls
+        FROM community_group_posts p JOIN users u ON u.id = p.user_id WHERE p.id = ?
+      `, [postId]);
+      return res.json({ post: updated });
+    } catch (error) {
+      console.error('PUT /posts/:postId error:', error);
+      return res.status(500).json({ error: 'Failed to update post' });
     }
+  });
+});
 
-    const result = await dbRun(`
-      INSERT INTO community_group_posts (group_id, user_id, title, body, post_type, predicted_numbers)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `, [groupId, userId, title.trim(), body.trim(), post_type === 'forecast' ? 'forecast' : 'discussion', predicted_numbers?.trim() || null]);
+router.post('/groups/:groupId/posts', authenticate, (req: AuthRequest, res: Response) => {
+  postImagesUpload(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    try {
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const post = await dbGet(`SELECT p.*, u.firstname, u.surname FROM community_group_posts p JOIN users u ON u.id = p.user_id WHERE p.id = ?`, [result.lastID]);
-    return res.status(201).json({ post });
-  } catch (error) {
-    console.error('POST /groups/:groupId/posts error:', error);
-    return res.status(500).json({ error: 'Failed to create post' });
-  }
+      const groupId = Number(req.params.groupId);
+      const { title, body, post_type, predicted_numbers } = req.body;
+
+      if (!groupId || Number.isNaN(groupId)) {
+        return res.status(400).json({ error: 'Invalid group ID' });
+      }
+      if (!title || title.trim().length < 1) {
+        return res.status(400).json({ error: 'Post title must be at least 1 character.' });
+      }
+      if (!body || body.trim().length < 2) {
+        return res.status(400).json({ error: 'Post body must be at least 2 characters.' });
+      }
+
+      const group = await dbGet(`SELECT * FROM community_groups WHERE id = ?`, [groupId]);
+      if (!group) return res.status(404).json({ error: 'Group not found' });
+
+      if (group.is_private) {
+        const membership = await dbGet(`SELECT id FROM community_group_members WHERE group_id = ? AND user_id = ?`, [groupId, userId]);
+        if (!membership) {
+          return res.status(403).json({ error: 'Access denied. Join the group first.' });
+        }
+      }
+
+      const result = await dbRun(`
+        INSERT INTO community_group_posts (group_id, user_id, title, body, post_type, predicted_numbers)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [groupId, userId, title.trim(), body.trim(), post_type === 'forecast' ? 'forecast' : 'discussion', predicted_numbers?.trim() || null]);
+
+      const postId = result.lastID;
+      const files = (req.files as Express.Multer.File[]) ?? [];
+      for (let i = 0; i < files.length; i++) {
+        await dbRun(`INSERT INTO community_post_images (post_id, image_url, sort_order) VALUES (?, ?, ?)`,
+          [postId, `/uploads/posts/${files[i].filename}`, i]);
+      }
+
+      const post = await dbGet(`
+        SELECT p.*, u.firstname, u.surname, u.avatar_url,
+          COALESCE(
+            (SELECT json_agg(pi.image_url ORDER BY pi.sort_order) FROM community_post_images pi WHERE pi.post_id = p.id),
+            '[]'::json
+          ) AS image_urls
+        FROM community_group_posts p JOIN users u ON u.id = p.user_id WHERE p.id = ?
+      `, [postId]);
+      return res.status(201).json({ post });
+    } catch (error) {
+      console.error('POST /groups/:groupId/posts error:', error);
+      return res.status(500).json({ error: 'Failed to create post' });
+    }
+  });
 });
 
 router.post('/posts/:postId/comments', authenticate, async (req: AuthRequest, res: Response) => {
@@ -433,6 +584,40 @@ router.post('/posts/:postId/comments', authenticate, async (req: AuthRequest, re
   } catch (error) {
     console.error('POST /posts/:postId/comments error:', error);
     return res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+router.put('/posts/:postId/comments/:commentId', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const postId = Number(req.params.postId);
+    const commentId = Number(req.params.commentId);
+    if (!postId || Number.isNaN(postId) || !commentId || Number.isNaN(commentId)) {
+      return res.status(400).json({ error: 'Invalid IDs' });
+    }
+
+    const comment = await dbGet(`SELECT * FROM community_post_comments WHERE id = ? AND post_id = ?`, [commentId, postId]);
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+    if (comment.user_id !== userId) return res.status(403).json({ error: 'Only the comment owner can edit this comment.' });
+
+    const { body } = req.body;
+    if (!body || body.trim().length < 1) return res.status(400).json({ error: 'Comment body is required.' });
+
+    await dbRun(`UPDATE community_post_comments SET body = ? WHERE id = ?`, [body.trim(), commentId]);
+
+    const updated = await dbGet(`
+      SELECT c.*, u.firstname, u.surname, u.avatar_url
+      FROM community_post_comments c
+      JOIN users u ON u.id = c.user_id
+      WHERE c.id = ?
+    `, [commentId]);
+
+    return res.json({ comment: updated });
+  } catch (error) {
+    console.error('PUT /posts/:postId/comments/:commentId error:', error);
+    return res.status(500).json({ error: 'Failed to update comment' });
   }
 });
 

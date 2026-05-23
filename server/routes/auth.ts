@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { dbRun, dbGet } from '../db/db.js';
 import { config } from '../config/index.js';
 import { authenticate, type AuthRequest } from '../middlewares/auth.js';
+import { avatarUpload } from '../middlewares/upload.js';
 import type {
   RegisterRequest,
   LoginRequest,
@@ -330,6 +331,31 @@ router.put('/profile', authenticate, async (req: AuthRequest, res: Response) => 
     console.error('Update profile error:', error);
     res.status(500).json({ error: 'Failed to update profile.' });
   }
+});
+
+// ─── POST /api/auth/avatar ────────────────────────────────────────────
+
+router.post('/avatar', authenticate, (req: AuthRequest, res: Response) => {
+  avatarUpload(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    try {
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      if (!req.file) return res.status(400).json({ error: 'No image file provided' });
+
+      const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+      await dbRun('UPDATE users SET avatar_url = ? WHERE id = ?', [avatarUrl, userId]);
+
+      const updated = await dbGet('SELECT * FROM users WHERE id = ?', [userId]);
+      const { password_hash, reset_token, reset_token_expires, ...safeUser } = updated as any;
+      return res.json({ message: 'Avatar updated successfully.', user: safeUser });
+    } catch (error) {
+      console.error('Avatar upload error:', error);
+      return res.status(500).json({ error: 'Failed to update avatar.' });
+    }
+  });
 });
 
 // ─── PUT /api/auth/change-password ───────────────────────────────────

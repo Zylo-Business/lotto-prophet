@@ -141,6 +141,7 @@ export const initDb = async () => {
     )
   `);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'user'`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500) DEFAULT NULL`);
 
   // predictions table
   await pool.query(`
@@ -253,6 +254,18 @@ export const initDb = async () => {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_community_group_posts_group ON community_group_posts(group_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_community_group_posts_user ON community_group_posts(user_id)`);
+  await pool.query(`ALTER TABLE community_group_posts ADD COLUMN IF NOT EXISTS image_url VARCHAR(500) DEFAULT NULL`);
+
+  // community_post_images table (supports up to 5 images per post)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS community_post_images (
+      id SERIAL PRIMARY KEY,
+      post_id INT NOT NULL REFERENCES community_group_posts(id) ON DELETE CASCADE,
+      image_url VARCHAR(500) NOT NULL,
+      sort_order INT DEFAULT 0
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_community_post_images_post ON community_post_images(post_id)`);
 
   // community_post_comments table
   await pool.query(`

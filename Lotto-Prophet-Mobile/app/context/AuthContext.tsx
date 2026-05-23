@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as authApi from '../lib/auth';
 import type { User, RegisterData, ProfileUpdateData } from '../lib/auth';
+export { type User };
 import { deleteToken, getToken, saveToken } from '../lib/authStorage';
 
 type AuthContextValue = {
@@ -13,6 +14,7 @@ type AuthContextValue = {
   forgotPassword: (email: string) => Promise<string>;
   logout: () => Promise<void>;
   updateUser: (data: ProfileUpdateData) => Promise<void>;
+  updateAvatar: (imageUri: string, mimeType?: string) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 };
 
@@ -97,6 +99,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(updated);
   }
 
+  async function updateAvatar(imageUri: string, mimeType?: string) {
+    if (!token) throw new Error('Not authenticated');
+    const updated = await authApi.uploadAvatar(token, imageUri, mimeType);
+    setUser(updated);
+  }
+
   async function changePassword(currentPassword: string, newPassword: string) {
     if (!token) throw new Error('Not authenticated');
     await authApi.changePassword(token, currentPassword, newPassword);
@@ -117,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, forgotPassword, logout, updateUser, changePassword }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, forgotPassword, logout, updateUser, updateAvatar, changePassword }}>
       {children}
     </AuthContext.Provider>
   );

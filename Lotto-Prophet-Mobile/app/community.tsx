@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -19,14 +21,28 @@ import { useTheme, type AppColors } from './context/ThemeContext';
 import {
   fetchFeed,
   fetchGroups,
+  fetchPostComments,
+  fetchGroupDetails,
+  addComment,
+  updateComment,
   joinGroup,
   createGroup,
-  createGroupPost,
+  createGroupPostWithImages,
+  updateGroupPost,
+  deleteGroupPost,
   likePost,
   unlikePost,
+  promoteMember,
+  demoteMember,
+  updateGroup,
+  removeMember,
   type CommunityGroup,
   type GroupPost,
+  type PostComment,
+  type CommunityMember,
+  type ImageAsset,
 } from './lib/community';
+import { getBaseUrl } from './lib/auth';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -58,7 +74,15 @@ const MAX_CHARS = 500;
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
-function Avatar({ userId, first, last, size = 40 }: { userId: number; first?: string; last?: string; size?: number }) {
+function Avatar({ userId, first, last, avatarUrl, baseUrl, size = 40 }: { userId: number; first?: string; last?: string; avatarUrl?: string | null; baseUrl?: string; size?: number }) {
+  if (avatarUrl && baseUrl) {
+    return (
+      <Image
+        source={{ uri: `${baseUrl}${avatarUrl}` }}
+        style={{ width: size, height: size, borderRadius: size / 2 }}
+      />
+    );
+  }
   return (
     <View
       style={{
@@ -81,19 +105,157 @@ function PostCard({
   post,
   COLORS,
   styles,
+  token,
+  currentUserId,
   onLike,
+  onPostUpdated,
+  onDelete,
 }: {
   post: GroupPost;
   COLORS: AppColors;
   styles: ReturnType<typeof createStyles>;
+  token: string;
+  currentUserId?: number;
   onLike: (post: GroupPost) => void;
+  onPostUpdated: (updated: GroupPost) => void;
+  onDelete: (post: GroupPost) => void;
 }) {
   const liked = post.liked_by_me === 1;
+  const isOwner = currentUserId !== undefined && post.user_id === currentUserId;
+  const canModerate = ['owner', 'moderator'].includes(post.my_group_role ?? '');
+  const canDelete = isOwner || canModerate;
+  const imageUrls: string[] = post.image_urls ?? (post.image_url ? [post.image_url] : []);
+  const BASE_URL = getBaseUrl();
+
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [comments, setComments] = useState<PostComment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const commentCount = Number(post.comment_count ?? 0);
+
+  // Comment edit state
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
+  const [editCommentBody, setEditCommentBody] = useState('');
+  const [savingComment, setSavingComment] = useState(false);
+
+  // Image lightbox
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
+  // Post edit state
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTitle, setEditTitle] = useState(post.title);
+  const [editBody, setEditBody] = useState(post.body);
+  const [editType, setEditType] = useState<'discussion' | 'forecast'>(post.post_type);
+  const [editNums, setEditNums] = useState(post.predicted_numbers ?? '');
+  const [editImages, setEditImages] = useState<ImageAsset[]>([]);
+  const [editSubmitting, setEditSubmitting] = useState(false);
+
+  const openEdit = () => {
+    setEditTitle(post.title);
+    setEditBody(post.body);
+    setEditType(post.post_type);
+    setEditNums(post.predicted_numbers ?? '');
+    setEditImages([]);
+    setEditOpen(true);
+  };
+
+  const pickEditImage = async () => {
+    if (editImages.length >= 5) return;
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission required', 'Allow photo library access.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      selectionLimit: 5 - editImages.length,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets?.length) {
+      const newAssets: ImageAsset[] = result.assets.map((a) => ({
+        uri: a.uri,
+        mimeType: a.mimeType ?? 'image/jpeg',
+        filename: a.fileName ?? undefined,
+      }));
+      setEditImages((prev) => [...prev, ...newAssets].slice(0, 5));
+    }
+  };
+
+  const submitEdit = async () => {
+    if (!editTitle.trim() || !editBody.trim()) {
+      Alert.alert('Title and body are required');
+      return;
+    }
+    if (editBody.length > MAX_CHARS) {
+      Alert.alert(`Max ${MAX_CHARS} characters`);
+      return;
+    }
+    try {
+      setEditSubmitting(true);
+      const updated = await updateGroupPost(
+        post.id,
+        editTitle.trim(),
+        editBody.trim(),
+        token,
+        editType,
+        editNums.trim() || undefined,
+        editImages.length > 0 ? editImages : undefined,
+      );
+      onPostUpdated(updated);
+      setEditOpen(false);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
+  const saveCommentEdit = async (commentId: number) => {
+    const body = editCommentBody.trim();
+    if (!body) return;
+    setSavingComment(true);
+    try {
+      const updated = await updateComment(post.id, commentId, body, token);
+      setComments((prev) => prev.map((c) => c.id === commentId ? { ...c, body: updated.body } : c));
+      setEditingCommentId(null);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSavingComment(false);
+    }
+  };
+
+  const toggleComments = async () => {
+    if (!commentsOpen && comments.length === 0) {
+      setCommentsLoading(true);
+      try {
+        const fetched = await fetchPostComments(post.id, token);
+        setComments(fetched);
+      } catch { /* silent */ }
+      finally { setCommentsLoading(false); }
+    }
+    setCommentsOpen((v) => !v);
+  };
+
+  const submitComment = async () => {
+    const body = commentText.trim();
+    if (!body) return;
+    setSubmitting(true);
+    try {
+      await addComment(post.id, body, token);
+      setCommentText('');
+      const fetched = await fetchPostComments(post.id, token);
+      setComments(fetched);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <View style={[styles.postCard, { backgroundColor: COLORS.card }]}>
       <View style={styles.postHeader}>
-        <Avatar userId={post.user_id} first={post.firstname} last={post.surname} />
+        <Avatar userId={post.user_id} first={post.firstname} last={post.surname} avatarUrl={post.avatar_url} baseUrl={BASE_URL} />
         <View style={styles.postMeta}>
           <View style={styles.postMetaRow}>
             <Text style={[styles.postAuthor, { color: COLORS.text }]}>
@@ -114,10 +276,93 @@ function PostCard({
             <Text style={styles.forecastBadgeText}>Forecast</Text>
           </View>
         )}
+        {isOwner && (
+          <Pressable onPress={openEdit} style={{ padding: 4 }} hitSlop={8}>
+            <Ionicons name="pencil-outline" size={16} color={COLORS.textSecondary} />
+          </Pressable>
+        )}
+        {canDelete && (
+          <Pressable onPress={() => onDelete(post)} style={{ padding: 4 }} hitSlop={8}>
+            <Ionicons name="trash-outline" size={16} color="#ef4444" />
+          </Pressable>
+        )}
       </View>
 
       <Text style={[styles.postTitle, { color: COLORS.text }]}>{post.title}</Text>
       <Text style={[styles.postBody, { color: COLORS.text }]}>{post.body}</Text>
+
+      {/* Post images — tap to view full size */}
+      {imageUrls.length > 0 && (
+        <>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
+            {imageUrls.slice(0, 4).map((url, i) => (
+              <Pressable
+                key={i}
+                onPress={() => setLightboxIndex(i)}
+                style={{ position: 'relative', width: imageUrls.length === 1 ? '100%' : '48%', aspectRatio: 1, borderRadius: 10, overflow: 'hidden', backgroundColor: COLORS.border }}
+              >
+                <Image
+                  source={{ uri: `${BASE_URL}${url}` }}
+                  style={{ width: '100%', height: '100%' }}
+                  resizeMode="cover"
+                />
+                {i === 3 && imageUrls.length > 4 && (
+                  <View style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center' }}>
+                    <Text style={{ color: '#fff', fontSize: 22, fontWeight: '700' }}>+{imageUrls.length - 4}</Text>
+                  </View>
+                )}
+              </Pressable>
+            ))}
+          </View>
+          <Modal visible={lightboxIndex !== null} transparent animationType="fade" onRequestClose={() => setLightboxIndex(null)}>
+            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' }}>
+              {/* Close */}
+              <Pressable
+                style={{ position: 'absolute', top: 52, right: 16, zIndex: 10, padding: 10, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 24 }}
+                onPress={() => setLightboxIndex(null)}
+              >
+                <Ionicons name="close" size={24} color="#fff" />
+              </Pressable>
+
+              {/* Counter */}
+              {imageUrls.length > 1 && lightboxIndex !== null && (
+                <View style={{ position: 'absolute', top: 56, alignSelf: 'center', zIndex: 10, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 4 }}>
+                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: '600' }}>{lightboxIndex + 1} / {imageUrls.length}</Text>
+                </View>
+              )}
+
+              {/* Prev */}
+              {lightboxIndex !== null && lightboxIndex > 0 && (
+                <Pressable
+                  style={{ position: 'absolute', left: 12, top: '50%', marginTop: -24, zIndex: 10, padding: 12, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 28 }}
+                  onPress={() => setLightboxIndex((i) => (i ?? 1) - 1)}
+                >
+                  <Ionicons name="chevron-back" size={24} color="#fff" />
+                </Pressable>
+              )}
+
+              {/* Image */}
+              {lightboxIndex !== null && (
+                <Image
+                  source={{ uri: `${BASE_URL}${imageUrls[lightboxIndex]}` }}
+                  style={{ width: '100%', height: '80%' }}
+                  resizeMode="contain"
+                />
+              )}
+
+              {/* Next */}
+              {lightboxIndex !== null && lightboxIndex < imageUrls.length - 1 && (
+                <Pressable
+                  style={{ position: 'absolute', right: 12, top: '50%', marginTop: -24, zIndex: 10, padding: 12, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 28 }}
+                  onPress={() => setLightboxIndex((i) => (i ?? 0) + 1)}
+                >
+                  <Ionicons name="chevron-forward" size={24} color="#fff" />
+                </Pressable>
+              )}
+            </View>
+          </Modal>
+        </>
+      )}
 
       {post.predicted_numbers && (
         <View style={styles.numbersRow}>
@@ -131,23 +376,411 @@ function PostCard({
 
       <View style={[styles.actionBar, { borderTopColor: COLORS.border }]}>
         <Pressable style={styles.actionBtn} onPress={() => onLike(post)}>
-          <Ionicons
-            name={liked ? 'heart' : 'heart-outline'}
-            size={17}
-            color={liked ? '#ef4444' : COLORS.textSecondary}
-          />
+          <Ionicons name={liked ? 'heart' : 'heart-outline'} size={17} color={liked ? '#ef4444' : COLORS.textSecondary} />
           <Text style={[styles.actionBtnText, { color: liked ? '#ef4444' : COLORS.textSecondary }]}>
             {Number(post.like_count ?? 0)}
           </Text>
         </Pressable>
-        <View style={styles.actionBtn}>
-          <Ionicons name="chatbubble-outline" size={16} color={COLORS.textSecondary} />
-          <Text style={[styles.actionBtnText, { color: COLORS.textSecondary }]}>
-            {Number(post.comment_count ?? 0)}
+        <Pressable style={styles.actionBtn} onPress={toggleComments}>
+          <Ionicons name={commentsOpen ? 'chatbubble' : 'chatbubble-outline'} size={16} color={commentsOpen ? COLORS.primary : COLORS.textSecondary} />
+          <Text style={[styles.actionBtnText, { color: commentsOpen ? COLORS.primary : COLORS.textSecondary }]}>
+            {commentCount} {commentCount === 1 ? 'comment' : 'comments'}
           </Text>
-        </View>
+        </Pressable>
       </View>
+
+      {/* Comments section */}
+      {commentsOpen && (
+        <View style={[styles.commentsSection, { borderTopColor: COLORS.border }]}>
+          {commentsLoading && <ActivityIndicator size="small" color={COLORS.primary} style={{ marginVertical: 8 }} />}
+          {comments.map((c) => (
+            <View key={c.id} style={styles.commentRow}>
+              <Avatar userId={c.user_id} first={c.firstname} last={c.surname} avatarUrl={c.avatar_url} baseUrl={BASE_URL} size={28} />
+              <View style={[styles.commentBubble, { backgroundColor: COLORS.inputBg ?? '#F3F4F6' }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+                  <Text style={[styles.commentAuthor, { color: COLORS.text, flex: 1 }]}>{c.firstname} {c.surname}</Text>
+                  {currentUserId === c.user_id && editingCommentId !== c.id && (
+                    <Pressable
+                      onPress={() => { setEditingCommentId(c.id); setEditCommentBody(c.body); }}
+                      hitSlop={8}
+                      style={{ padding: 2 }}
+                    >
+                      <Ionicons name="pencil-outline" size={12} color={COLORS.textSecondary} />
+                    </Pressable>
+                  )}
+                </View>
+                {editingCommentId === c.id ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                    <TextInput
+                      autoFocus
+                      value={editCommentBody}
+                      onChangeText={setEditCommentBody}
+                      style={[styles.commentInput, { flex: 1, backgroundColor: COLORS.card, color: COLORS.text }]}
+                      onSubmitEditing={() => saveCommentEdit(c.id)}
+                      returnKeyType="done"
+                    />
+                    <Pressable onPress={() => saveCommentEdit(c.id)} disabled={savingComment || !editCommentBody.trim()}>
+                      {savingComment ? (
+                        <ActivityIndicator size="small" color={COLORS.primary} />
+                      ) : (
+                        <Ionicons name="checkmark" size={16} color={COLORS.primary} />
+                      )}
+                    </Pressable>
+                    <Pressable onPress={() => setEditingCommentId(null)}>
+                      <Ionicons name="close" size={16} color={COLORS.textSecondary} />
+                    </Pressable>
+                  </View>
+                ) : (
+                  <Text style={[styles.commentBody, { color: COLORS.text }]}>{c.body}</Text>
+                )}
+              </View>
+            </View>
+          ))}
+          {comments.length === 0 && !commentsLoading && (
+            <Text style={[styles.noComments, { color: COLORS.textSecondary }]}>No comments yet. Be the first!</Text>
+          )}
+          <View style={[styles.commentInputRow, { borderTopColor: COLORS.border }]}>
+            <TextInput
+              value={commentText}
+              onChangeText={setCommentText}
+              placeholder="Add a comment…"
+              placeholderTextColor={COLORS.textSecondary}
+              style={[styles.commentInput, { backgroundColor: COLORS.inputBg ?? '#F3F4F6', color: COLORS.text }]}
+              onSubmitEditing={submitComment}
+              returnKeyType="send"
+            />
+            <Pressable onPress={submitComment} disabled={submitting || !commentText.trim()} style={styles.commentSendBtn}>
+              {submitting ? (
+                <ActivityIndicator size="small" color={COLORS.primary} />
+              ) : (
+                <Ionicons name="send" size={18} color={commentText.trim() ? COLORS.primary : COLORS.textSecondary} />
+              )}
+            </Pressable>
+          </View>
+        </View>
+      )}
+
+      {/* Edit modal */}
+      <Modal visible={editOpen} animationType="slide" presentationStyle="pageSheet">
+        <View style={[styles.modalContainer, { backgroundColor: COLORS.background }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: COLORS.border }]}>
+            <Pressable onPress={() => setEditOpen(false)}>
+              <Text style={[styles.modalCancel, { color: COLORS.textSecondary }]}>Cancel</Text>
+            </Pressable>
+            <Text style={[styles.modalTitle, { color: COLORS.text }]}>Edit Post</Text>
+            <Pressable
+              onPress={submitEdit}
+              disabled={editSubmitting}
+              style={[styles.modalPost, { backgroundColor: COLORS.primary, opacity: editSubmitting ? 0.6 : 1 }]}
+            >
+              <Text style={styles.modalPostText}>{editSubmitting ? '…' : 'Save'}</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView style={styles.modalBody} contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">
+            {/* Type toggle */}
+            <Text style={[styles.fieldLabel, { color: COLORS.textSecondary }]}>Type</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {(['discussion', 'forecast'] as const).map((t) => (
+                <Pressable
+                  key={t}
+                  onPress={() => setEditType(t)}
+                  style={[
+                    styles.typeChip,
+                    {
+                      backgroundColor: editType === t ? COLORS.primary : COLORS.card,
+                      borderColor: editType === t ? COLORS.primary : COLORS.border,
+                    },
+                  ]}
+                >
+                  <Text style={{ color: editType === t ? '#fff' : COLORS.text, fontSize: 13, fontWeight: '600' }}>
+                    {t === 'discussion' ? '💬 Discussion' : '🔢 Forecast'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={[styles.fieldLabel, { color: COLORS.textSecondary }]}>Title</Text>
+            <TextInput
+              value={editTitle}
+              onChangeText={setEditTitle}
+              placeholder="Post title…"
+              placeholderTextColor={COLORS.textSecondary}
+              style={[styles.input, { backgroundColor: COLORS.card, color: COLORS.text, borderColor: COLORS.border }]}
+            />
+
+            <Text style={[styles.fieldLabel, { color: COLORS.textSecondary }]}>
+              Body <Text style={{ color: editBody.length > MAX_CHARS ? '#ef4444' : COLORS.textSecondary }}>({MAX_CHARS - editBody.length})</Text>
+            </Text>
+            <TextInput
+              value={editBody}
+              onChangeText={setEditBody}
+              placeholder="Share your thoughts…"
+              placeholderTextColor={COLORS.textSecondary}
+              multiline
+              numberOfLines={5}
+              style={[styles.input, styles.textarea, { backgroundColor: COLORS.card, color: COLORS.text, borderColor: COLORS.border }]}
+            />
+
+            {editType === 'forecast' && (
+              <>
+                <Text style={[styles.fieldLabel, { color: COLORS.textSecondary }]}>Predicted Numbers</Text>
+                <TextInput
+                  value={editNums}
+                  onChangeText={setEditNums}
+                  placeholder="3, 17, 22…"
+                  placeholderTextColor={COLORS.textSecondary}
+                  keyboardType="numbers-and-punctuation"
+                  style={[styles.input, { backgroundColor: COLORS.card, color: COLORS.text, borderColor: COLORS.border }]}
+                />
+              </>
+            )}
+
+            <Text style={[styles.fieldLabel, { color: COLORS.textSecondary }]}>
+              Photos (optional){editImages.length > 0 ? ` · ${editImages.length}/5` : ''}
+            </Text>
+            {editImages.length > 0 && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+                {editImages.map((img, i) => (
+                  <View key={i} style={{ position: 'relative' }}>
+                    <Image source={{ uri: img.uri }} style={styles.imagePreview} resizeMode="cover" />
+                    <Pressable
+                      onPress={() => setEditImages((prev) => prev.filter((_, idx) => idx !== i))}
+                      style={styles.removeImageBtn}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>×</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            )}
+            {editImages.length < 5 && (
+              <Pressable
+                onPress={pickEditImage}
+                style={[styles.imagePicker, { borderColor: COLORS.border, backgroundColor: COLORS.card }]}
+              >
+                <Ionicons name="image-outline" size={22} color={COLORS.textSecondary} />
+                <Text style={[{ color: COLORS.textSecondary, fontSize: 13, marginTop: 4 }]}>
+                  {editImages.length === 0
+                    ? imageUrls.length > 0 ? 'Tap to replace photos' : 'Tap to attach photos (up to 5)'
+                    : `Add more (${5 - editImages.length} remaining)`}
+                </Text>
+              </Pressable>
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
+  );
+}
+
+// ── members modal ─────────────────────────────────────────────────────────────
+
+function MembersModal({
+  group,
+  token,
+  currentUserId,
+  COLORS,
+  styles,
+  onClose,
+  onGroupUpdated,
+}: {
+  group: CommunityGroup;
+  token: string;
+  currentUserId?: number;
+  COLORS: AppColors;
+  styles: ReturnType<typeof createStyles>;
+  onClose: () => void;
+  onGroupUpdated: (g: CommunityGroup) => void;
+}) {
+  const [members, setMembers] = useState<CommunityMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<number | null>(null);
+
+  // Edit group state
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState(group.name);
+  const [editDesc, setEditDesc] = useState(group.description);
+  const [editPrivate, setEditPrivate] = useState(group.is_private === 1);
+  const [editCode, setEditCode] = useState(group.join_code ?? '');
+  const [savingGroup, setSavingGroup] = useState(false);
+
+  useEffect(() => {
+    fetchGroupDetails(group.id, token)
+      .then((d) => setMembers(d.members))
+      .catch(() => Alert.alert('Error', 'Failed to load members'))
+      .finally(() => setLoading(false));
+  }, [group.id, token]);
+
+  async function saveGroup() {
+    if (!editName.trim() || editName.trim().length < 3) { Alert.alert('Error', 'Name must be at least 3 characters'); return; }
+    if (editPrivate && editCode.trim().length < 4) { Alert.alert('Error', 'Join code must be at least 4 characters'); return; }
+    setSavingGroup(true);
+    try {
+      const updated = await updateGroup(group.id, editName.trim(), editDesc.trim(), editPrivate, editPrivate ? editCode.trim() : undefined, token);
+      onGroupUpdated(updated);
+      setEditOpen(false);
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSavingGroup(false);
+    }
+  }
+
+  async function promote(memberId: number) {
+    setBusy(memberId);
+    try {
+      await promoteMember(group.id, memberId, token);
+      setMembers((prev) => prev.map((m) => m.id === memberId ? { ...m, role: 'moderator' as const } : m));
+    } catch (e: any) { Alert.alert('Error', e.message); }
+    finally { setBusy(null); }
+  }
+
+  async function demote(memberId: number) {
+    setBusy(memberId);
+    try {
+      await demoteMember(group.id, memberId, token);
+      setMembers((prev) => prev.map((m) => m.id === memberId ? { ...m, role: 'member' as const } : m));
+    } catch (e: any) { Alert.alert('Error', e.message); }
+    finally { setBusy(null); }
+  }
+
+  async function remove(memberId: number) {
+    Alert.alert('Remove member', 'Remove this person from the group?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove', style: 'destructive',
+        onPress: async () => {
+          setBusy(memberId);
+          try {
+            await removeMember(group.id, memberId, token);
+            setMembers((prev) => prev.filter((m) => m.id !== memberId));
+          } catch (e: any) { Alert.alert('Error', e.message); }
+          finally { setBusy(null); }
+        },
+      },
+    ]);
+  }
+
+  return (
+    <Modal visible animationType="slide" presentationStyle="pageSheet">
+      <View style={[styles.modalContainer, { backgroundColor: COLORS.background }]}>
+        <View style={[styles.modalHeader, { borderBottomColor: COLORS.border }]}>
+          <Pressable onPress={onClose}>
+            <Text style={[styles.modalCancel, { color: COLORS.textSecondary }]}>Done</Text>
+          </Pressable>
+          <Text style={[styles.modalTitle, { color: COLORS.text }]} numberOfLines={1}>{group.name}</Text>
+          <Pressable onPress={() => { setEditOpen((v) => !v); setEditName(group.name); setEditDesc(group.description); setEditPrivate(group.is_private === 1); setEditCode(group.join_code ?? ''); }}>
+            <Text style={{ color: COLORS.primary, fontSize: 14, fontWeight: '600' }}>{editOpen ? 'Cancel' : 'Edit'}</Text>
+          </Pressable>
+        </View>
+
+        <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">
+          {/* Edit group form */}
+          {editOpen && (
+            <View style={{ gap: 10, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: COLORS.primary + '40', backgroundColor: COLORS.primary + '08', marginBottom: 4 }}>
+              <Text style={{ color: COLORS.primary, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 }}>Edit Group</Text>
+              <TextInput
+                value={editName}
+                onChangeText={setEditName}
+                placeholder="Group name"
+                placeholderTextColor={COLORS.textSecondary}
+                style={[styles.input, { backgroundColor: COLORS.card, color: COLORS.text, borderColor: COLORS.border }]}
+              />
+              <TextInput
+                value={editDesc}
+                onChangeText={setEditDesc}
+                placeholder="Description (optional)"
+                placeholderTextColor={COLORS.textSecondary}
+                multiline
+                numberOfLines={2}
+                style={[styles.input, { backgroundColor: COLORS.card, color: COLORS.text, borderColor: COLORS.border }]}
+              />
+              <Pressable
+                style={[styles.toggleRow, { backgroundColor: COLORS.card, borderColor: COLORS.border }]}
+                onPress={() => setEditPrivate((v) => !v)}
+              >
+                <Text style={[styles.toggleLabel, { color: COLORS.text }]}>Private group</Text>
+                <View style={[styles.toggleKnob, { backgroundColor: editPrivate ? COLORS.primary : COLORS.border }]}>
+                  <View style={[styles.toggleThumb, { alignSelf: editPrivate ? 'flex-end' : 'flex-start' }]} />
+                </View>
+              </Pressable>
+              {editPrivate && (
+                <TextInput
+                  value={editCode}
+                  onChangeText={setEditCode}
+                  placeholder="Join code (min 4 chars)"
+                  placeholderTextColor={COLORS.textSecondary}
+                  style={[styles.input, { backgroundColor: COLORS.card, color: COLORS.text, borderColor: COLORS.border }]}
+                />
+              )}
+              <Pressable
+                onPress={saveGroup}
+                disabled={savingGroup}
+                style={[styles.modalPost, { backgroundColor: COLORS.primary, opacity: savingGroup ? 0.6 : 1, alignSelf: 'flex-end' }]}
+              >
+                <Text style={styles.modalPostText}>{savingGroup ? 'Saving…' : 'Save changes'}</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {/* Members */}
+          <Text style={{ color: COLORS.textSecondary, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+            Members ({members.length})
+          </Text>
+          {loading ? (
+            <ActivityIndicator size="large" color={COLORS.primary} style={{ marginVertical: 24 }} />
+          ) : (
+            members.map((m) => {
+              const isMe = m.id === currentUserId;
+              const isOwner = m.role === 'owner';
+              const isMod = m.role === 'moderator';
+              return (
+                <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 }}>
+                  <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: avatarBg(m.id), justifyContent: 'center', alignItems: 'center' }}>
+                    <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>
+                      {`${m.firstname[0] ?? ''}${m.surname[0] ?? ''}`.toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: COLORS.text, fontWeight: '600', fontSize: 14 }}>
+                      {m.firstname} {m.surname}{isMe ? ' (you)' : ''}
+                    </Text>
+                    <Text style={{ color: COLORS.textSecondary, fontSize: 12, textTransform: 'capitalize' }}>
+                      {m.role ?? 'member'}
+                    </Text>
+                  </View>
+                  {isOwner && (
+                    <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, backgroundColor: '#f59e0b20' }}>
+                      <Text style={{ color: '#f59e0b', fontSize: 11, fontWeight: '700' }}>Owner</Text>
+                    </View>
+                  )}
+                  {!isMe && !isOwner && (
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      {isMod ? (
+                        <Pressable disabled={busy === m.id} onPress={() => demote(m.id)}
+                          style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: '#f59e0b', opacity: busy === m.id ? 0.4 : 1 }}>
+                          {busy === m.id ? <ActivityIndicator size="small" color="#f59e0b" /> : <Text style={{ color: '#f59e0b', fontSize: 12, fontWeight: '600' }}>Demote</Text>}
+                        </Pressable>
+                      ) : (
+                        <Pressable disabled={busy === m.id} onPress={() => promote(m.id)}
+                          style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: COLORS.primary, opacity: busy === m.id ? 0.4 : 1 }}>
+                          {busy === m.id ? <ActivityIndicator size="small" color={COLORS.primary} /> : <Text style={{ color: COLORS.primary, fontSize: 12, fontWeight: '600' }}>Mod</Text>}
+                        </Pressable>
+                      )}
+                      <Pressable disabled={busy === m.id} onPress={() => remove(m.id)}
+                        style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: '#ef4444', opacity: busy === m.id ? 0.4 : 1 }}>
+                        {busy === m.id ? <ActivityIndicator size="small" color="#ef4444" /> : <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '600' }}>Remove</Text>}
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+              );
+            })
+          )}
+        </ScrollView>
+      </View>
+    </Modal>
   );
 }
 
@@ -156,7 +789,7 @@ function PostCard({
 type Tab = 'feed' | 'groups';
 
 export default function CommunityPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { colors: COLORS } = useTheme();
   const styles = useMemo(() => createStyles(COLORS), [COLORS]);
   const router = useRouter();
@@ -174,7 +807,9 @@ export default function CommunityPage() {
   const [postBody, setPostBody] = useState('');
   const [postType, setPostType] = useState<'discussion' | 'forecast'>('discussion');
   const [predictedNums, setPredictedNums] = useState('');
+  const [postImages, setPostImages] = useState<ImageAsset[]>([]);
   const [posting, setPosting] = useState(false);
+  const [membersModalGroup, setMembersModalGroup] = useState<CommunityGroup | null>(null);
 
   // Create group modal
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
@@ -207,6 +842,10 @@ export default function CommunityPage() {
     load();
   }, [token, load]);
 
+  function handlePostUpdated(updated: GroupPost) {
+    setFeed((prev) => prev.map((p) => p.id === updated.id ? { ...p, ...updated } : p));
+  }
+
   async function handleLike(post: GroupPost) {
     if (!token) return;
     const liked = post.liked_by_me === 1;
@@ -231,6 +870,26 @@ export default function CommunityPage() {
     }
   }
 
+  async function pickPostImage() {
+    if (postImages.length >= 5) return;
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') { Alert.alert('Permission required', 'Allow photo library access.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      selectionLimit: 5 - postImages.length,
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets?.length) {
+      const newAssets: ImageAsset[] = result.assets.map((a) => ({
+        uri: a.uri,
+        mimeType: a.mimeType ?? 'image/jpeg',
+        filename: a.fileName ?? undefined,
+      }));
+      setPostImages((prev) => [...prev, ...newAssets].slice(0, 5));
+    }
+  }
+
   async function handlePost() {
     if (!token || !selectedGroupId) {
       Alert.alert('Select a group first');
@@ -246,18 +905,46 @@ export default function CommunityPage() {
     }
     try {
       setPosting(true);
-      await createGroupPost(selectedGroupId, postTitle.trim(), postBody.trim(), token);
+      await createGroupPostWithImages(
+        selectedGroupId,
+        postTitle.trim(),
+        postBody.trim(),
+        token,
+        postType,
+        predictedNums.trim() || undefined,
+        postImages.length > 0 ? postImages : undefined,
+      );
       setComposerOpen(false);
       setPostTitle('');
       setPostBody('');
       setPredictedNums('');
       setPostType('discussion');
+      setPostImages([]);
       await load(true);
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
       setPosting(false);
     }
+  }
+
+  async function handleDeletePost(post: GroupPost) {
+    if (!token) return;
+    Alert.alert('Delete post', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteGroupPost(post.group_id, post.id, token);
+            setFeed((prev) => prev.filter((p) => p.id !== post.id));
+          } catch (e: any) {
+            Alert.alert('Error', e.message);
+          }
+        },
+      },
+    ]);
   }
 
   async function handleJoin(group: CommunityGroup) {
@@ -357,7 +1044,7 @@ export default function CommunityPage() {
           onRefresh={() => { setRefreshing(true); load(true); }}
           renderItem={({ item, index }) => (
             <Animated.View entering={FadeInUp.delay(40 * index).duration(300)}>
-              <PostCard post={item} COLORS={COLORS} styles={styles} onLike={handleLike} />
+              <PostCard post={item} COLORS={COLORS} styles={styles} token={token!} currentUserId={user?.id} onLike={handleLike} onPostUpdated={handlePostUpdated} onDelete={handleDeletePost} />
             </Animated.View>
           )}
           ListEmptyComponent={
@@ -413,18 +1100,29 @@ export default function CommunityPage() {
                       </Text>
                     </View>
                   </View>
-                  {isMember ? (
-                    <View style={[styles.memberBadge, { backgroundColor: '#10b98115' }]}>
-                      <Text style={[styles.memberBadgeText, { color: '#10b981' }]}>Joined</Text>
-                    </View>
-                  ) : (
-                    <Pressable
-                      style={[styles.joinBtn, { backgroundColor: COLORS.primary }]}
-                      onPress={() => handleJoin(item)}
-                    >
-                      <Text style={styles.joinBtnText}>Join</Text>
-                    </Pressable>
-                  )}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    {item.my_role === 'owner' && (
+                      <Pressable
+                        onPress={() => setMembersModalGroup(item)}
+                        style={{ padding: 6 }}
+                        hitSlop={8}
+                      >
+                        <Ionicons name="settings-outline" size={18} color={COLORS.textSecondary} />
+                      </Pressable>
+                    )}
+                    {isMember ? (
+                      <View style={[styles.memberBadge, { backgroundColor: '#10b98115' }]}>
+                        <Text style={[styles.memberBadgeText, { color: '#10b981' }]}>Joined</Text>
+                      </View>
+                    ) : (
+                      <Pressable
+                        style={[styles.joinBtn, { backgroundColor: COLORS.primary }]}
+                        onPress={() => handleJoin(item)}
+                      >
+                        <Text style={styles.joinBtnText}>Join</Text>
+                      </Pressable>
+                    )}
+                  </View>
                 </View>
               </Animated.View>
             );
@@ -544,9 +1242,56 @@ export default function CommunityPage() {
                 />
               </>
             )}
+
+            {/* Image attachments (up to 5) */}
+            <Text style={[styles.fieldLabel, { color: COLORS.textSecondary }]}>
+              Photos (optional){postImages.length > 0 ? ` · ${postImages.length}/5` : ''}
+            </Text>
+            {postImages.length > 0 && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+                {postImages.map((img, i) => (
+                  <View key={i} style={{ position: 'relative' }}>
+                    <Image source={{ uri: img.uri }} style={styles.imagePreview} resizeMode="cover" />
+                    <Pressable
+                      onPress={() => setPostImages((prev) => prev.filter((_, idx) => idx !== i))}
+                      style={styles.removeImageBtn}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>×</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            )}
+            {postImages.length < 5 && (
+              <Pressable
+                onPress={pickPostImage}
+                style={[styles.imagePicker, { borderColor: COLORS.border, backgroundColor: COLORS.card }]}
+              >
+                <Ionicons name="image-outline" size={22} color={COLORS.textSecondary} />
+                <Text style={[{ color: COLORS.textSecondary, fontSize: 13, marginTop: 4 }]}>
+                  {postImages.length === 0 ? 'Tap to attach photos (up to 5)' : `Add more (${5 - postImages.length} remaining)`}
+                </Text>
+              </Pressable>
+            )}
           </ScrollView>
         </View>
       </Modal>
+
+      {/* Members Modal */}
+      {membersModalGroup && (
+        <MembersModal
+          group={membersModalGroup}
+          token={token!}
+          currentUserId={user?.id}
+          COLORS={COLORS}
+          styles={styles}
+          onClose={() => setMembersModalGroup(null)}
+          onGroupUpdated={(updated) => {
+            setGroups((prev) => prev.map((g) => g.id === updated.id ? { ...g, ...updated } : g));
+            setMembersModalGroup((prev) => prev ? { ...prev, ...updated } : prev);
+          }}
+        />
+      )}
 
       {/* Create Group Modal */}
       <Modal visible={createGroupOpen} animationType="slide" presentationStyle="pageSheet">
@@ -797,5 +1542,88 @@ const createStyles = (COLORS: AppColors) =>
       height: 22,
       borderRadius: 11,
       backgroundColor: '#fff',
+    },
+    postImage: {
+      width: '100%',
+      height: 200,
+      borderRadius: 12,
+      marginTop: 10,
+    },
+    commentsSection: {
+      borderTopWidth: StyleSheet.hairlineWidth,
+      marginTop: 10,
+      paddingTop: 10,
+    },
+    commentRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+      marginBottom: 8,
+    },
+    commentBubble: {
+      flex: 1,
+      borderRadius: 12,
+      paddingHorizontal: 10,
+      paddingVertical: 7,
+    },
+    commentAuthor: {
+      fontSize: 12,
+      fontWeight: '700',
+      marginBottom: 2,
+    },
+    commentBody: {
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    noComments: {
+      fontSize: 13,
+      textAlign: 'center',
+      paddingVertical: 8,
+    },
+    commentInputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      marginTop: 8,
+      paddingTop: 8,
+    },
+    commentInput: {
+      flex: 1,
+      borderRadius: 20,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      fontSize: 13,
+    },
+    commentSendBtn: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    imagePreview: {
+      width: 100,
+      height: 100,
+      borderRadius: 10,
+    },
+    removeImageBtn: {
+      position: 'absolute',
+      top: -6,
+      right: -6,
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      backgroundColor: '#ef4444',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    imagePicker: {
+      height: 90,
+      borderWidth: 1.5,
+      borderStyle: 'dashed',
+      borderRadius: 12,
+      justifyContent: 'center',
+      alignItems: 'center',
     },
   });

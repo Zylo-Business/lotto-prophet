@@ -14,6 +14,7 @@ export type User = {
   referral_code: string | null;
   date_of_birth: string;
   created_at: string;
+  avatar_url?: string | null;
 };
 
 export type AuthResponse = {
@@ -226,6 +227,22 @@ export async function updateProfile(token: string, data: ProfileUpdateData): Pro
     throw new Error(extractError(err, 'Failed to update profile'));
   }
 }
+
+export async function uploadAvatar(token: string, imageUri: string, mimeType = 'image/jpeg'): Promise<User> {
+  const filename = imageUri.split('/').pop() ?? 'avatar.jpg';
+  const formData = new FormData();
+  formData.append('avatar', { uri: imageUri, type: mimeType, name: filename } as any);
+  const response = await fetch(`${BASE_URL}/api/auth/avatar`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Failed to upload avatar');
+  return data.user as User;
+}
+
+export const getBaseUrl = () => BASE_URL;
 
 export async function changePassword(
   token: string,
