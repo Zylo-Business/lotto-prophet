@@ -1,4 +1,5 @@
-import 'dotenv/config';
+import { config as dotenvConfig } from 'dotenv';
+dotenvConfig({ override: true });
 import express, { type Request, type Response } from 'express';
 import { dbRun, dbAll, dbGet, initDb, closeDb } from './db/db.js';
 import authRoutes from './routes/auth.js';
