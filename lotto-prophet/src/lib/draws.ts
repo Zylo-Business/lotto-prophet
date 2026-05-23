@@ -57,16 +57,34 @@ function extractError(err: unknown, fallback: string): string {
 const DISPLAY_NAMES: Record<string, string> = {
   lucky: "Lucky Tuesday",
   alpha: "Alpha Lotto",
+  "alpha one": "Alpha One",
+  "alpha express": "Alpha Express",
+  express: "Alpha Express",
+  nla: "NLA",
+  "nla rush": "NLA Rush",
+  rush: "NLA Rush",
 };
 
 const SOURCE_COLORS: Record<string, string> = {
   lucky: "#F59E0B",
   alpha: "#6C63FF",
+  "alpha one": "#8B5CF6",
+  "alpha express": "#EC4899",
+  express: "#EC4899",
+  nla: "#10B981",
+  "nla rush": "#EF4444",
+  rush: "#EF4444",
 };
 
 const SOURCE_ICONS: Record<string, string> = {
   lucky: "⭐",
   alpha: "🏆",
+  "alpha one": "🥇",
+  "alpha express": "⚡",
+  express: "⚡",
+  nla: "🎯",
+  "nla rush": "🚀",
+  rush: "🚀",
 };
 
 export function getDrawDisplayName(source: string): string {

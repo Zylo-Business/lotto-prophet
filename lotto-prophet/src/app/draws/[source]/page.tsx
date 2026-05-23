@@ -23,7 +23,7 @@ const PAGE_SIZE = 30;
 export default function DrawDetailPage() {
   const router = useRouter();
   const params = useParams();
-  const source = params.source as string;
+  const source = decodeURIComponent(params.source as string);
 
   const [draws, setDraws] = useState<DrawFlat[]>([]);
   const [total, setTotal] = useState(0);
