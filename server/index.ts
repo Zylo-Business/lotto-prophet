@@ -13,6 +13,7 @@ import morgan from 'morgan';
 import cors from 'cors';
 import { setupSyncCron } from './utils/schedule-sync.js';
 import { syncGoogleDrive } from './utils/sync-google-drive.js';
+import { apiLimiter } from './middlewares/rate-limit.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -21,6 +22,7 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json());
+app.use(apiLimiter);
 
 // Serve uploaded files (avatars, post images)
 app.use('/uploads', express.static('uploads'));

@@ -19,6 +19,7 @@ export type User = {
 export type AuthResponse = {
   message: string;
   token?: string;
+  refresh_token?: string;
   user?: User;
 };
 
@@ -181,5 +182,27 @@ export async function changePassword(
     return data;
   } catch (err) {
     throw new Error(extractError(err, "Failed to change password"));
+  }
+}
+
+export async function refreshAccessToken(
+  refresh_token: string,
+): Promise<{ token: string; refresh_token: string }> {
+  try {
+    const { data } = await api.post<{ token: string; refresh_token: string }>(
+      "/refresh",
+      { refresh_token },
+    );
+    return data;
+  } catch (err) {
+    throw new Error(extractError(err, "Session expired. Please log in again."));
+  }
+}
+
+export async function logout(refresh_token: string): Promise<void> {
+  try {
+    await api.post("/logout", { refresh_token });
+  } catch {
+    // Best-effort — don't block local logout if server call fails
   }
 }

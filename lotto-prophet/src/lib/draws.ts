@@ -1,4 +1,5 @@
-import axios, { AxiosError } from "axios";
+import { AxiosError } from "axios";
+import { apiClient } from "./api-client";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -33,16 +34,12 @@ export type DrawsBySourceResponse = {
   draws: DrawFlat[];
 };
 
-// ─── Base URL ────────────────────────────────────────────────────────
+// ─── Scoped client ───────────────────────────────────────────────────
 
-const BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-
-const api = axios.create({
-  baseURL: `${BASE_URL}/api/draws`,
-  headers: { "Content-Type": "application/json" },
-  timeout: 15000,
-});
+const api = {
+  get: <T>(url: string, config?: object) =>
+    apiClient.get<T>(`/api/draws${url}`, config),
+};
 
 function extractError(err: unknown, fallback: string): string {
   if (err instanceof AxiosError && err.response?.data?.error) {

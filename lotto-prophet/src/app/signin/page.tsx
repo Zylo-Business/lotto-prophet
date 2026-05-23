@@ -43,9 +43,8 @@ export default function SignInPage() {
       const res = await login(identifier.trim(), password);
       if (res.token) {
         localStorage.setItem("token", res.token);
-        if (res.user) {
-          localStorage.setItem("user", JSON.stringify(res.user));
-        }
+        if (res.refresh_token) localStorage.setItem("refresh_token", res.refresh_token);
+        if (res.user) localStorage.setItem("user", JSON.stringify(res.user));
         router.push("/dashboard");
       }
     } catch (err: any) {

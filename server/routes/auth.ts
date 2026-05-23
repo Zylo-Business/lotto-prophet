@@ -3,9 +3,10 @@ import type { Router as RouterType } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import { dbRun, dbGet } from '../db/db.js';
+import { dbRun, dbGet, pool } from '../db/db.js';
 import { config } from '../config/index.js';
 import { authenticate, type AuthRequest } from '../middlewares/auth.js';
+import { authLimiter, forgotPasswordLimiter } from '../middlewares/rate-limit.js';
 import { avatarUpload } from '../middlewares/upload.js';
 import type {
   RegisterRequest,
@@ -53,9 +54,20 @@ const signToken = (user: User): string =>
     { expiresIn: config.jwt.expiresInSeconds },
   );
 
+async function createRefreshToken(userId: number): Promise<string> {
+  const raw = crypto.randomBytes(64).toString('hex');
+  const hash = crypto.createHash('sha256').update(raw).digest('hex');
+  const expiresAt = new Date(Date.now() + config.refreshToken.expiresInMs);
+  await pool.query(
+    'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+    [userId, hash, expiresAt],
+  );
+  return raw;
+}
+
 // ─── POST /api/auth/register ─────────────────────────────────────────
 
-router.post('/register', async (req: Request, res: Response) => {
+router.post('/register', authLimiter, async (req: Request, res: Response) => {
   try {
     const body: RegisterRequest = req.body;
     const { firstname, surname, email, country_code, mobile_number, referral_code, password, date_of_birth } = body;
@@ -135,12 +147,14 @@ router.post('/register', async (req: Request, res: Response) => {
     // Fetch created user
     const newUser: User = await dbGet('SELECT * FROM users WHERE id = ?', [result.lastID]);
 
-    // Generate JWT
+    // Generate JWT and refresh token
     const token = signToken(newUser);
+    const refresh_token = await createRefreshToken(newUser.id);
 
     res.status(201).json({
       message: 'Registration successful.',
       token,
+      refresh_token,
       user: sanitizeUser(newUser),
     });
   } catch (error) {
@@ -151,7 +165,7 @@ router.post('/register', async (req: Request, res: Response) => {
 
 // ─── POST /api/auth/login ────────────────────────────────────────────
 
-router.post('/login', async (req: Request, res: Response) => {
+router.post('/login', authLimiter, async (req: Request, res: Response) => {
   try {
     const { identifier, password }: LoginRequest = req.body;
 
@@ -183,12 +197,14 @@ router.post('/login', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid credentials.' });
     }
 
-    // Generate JWT
+    // Generate JWT and refresh token
     const token = signToken(user);
+    const refresh_token = await createRefreshToken(user.id);
 
     res.json({
       message: 'Login successful.',
       token,
+      refresh_token,
       user: sanitizeUser(user),
     });
   } catch (error) {
@@ -199,7 +215,7 @@ router.post('/login', async (req: Request, res: Response) => {
 
 // ─── POST /api/auth/forgot-password ──────────────────────────────────
 
-router.post('/forgot-password', async (req: Request, res: Response) => {
+router.post('/forgot-password', forgotPasswordLimiter, async (req: Request, res: Response) => {
   try {
     const { email }: ForgotPasswordRequest = req.body;
 
@@ -384,6 +400,67 @@ router.put('/change-password', authenticate, async (req: AuthRequest, res: Respo
   } catch (error) {
     console.error('Change password error:', error);
     res.status(500).json({ error: 'Failed to change password.' });
+  }
+});
+
+// ─── POST /api/auth/refresh ───────────────────────────────────────────
+
+router.post('/refresh', async (req: Request, res: Response) => {
+  try {
+    const { refresh_token } = req.body;
+    if (!refresh_token || typeof refresh_token !== 'string') {
+      return res.status(401).json({ error: 'Refresh token required.' });
+    }
+
+    const hash = crypto.createHash('sha256').update(refresh_token).digest('hex');
+    const stored = await pool.query(
+      'SELECT rt.id, rt.user_id, rt.expires_at FROM refresh_tokens rt WHERE rt.token_hash = $1',
+      [hash],
+    );
+
+    if (!stored.rows[0]) {
+      return res.status(401).json({ error: 'Invalid refresh token.' });
+    }
+
+    const row = stored.rows[0];
+    if (new Date(row.expires_at) < new Date()) {
+      await pool.query('DELETE FROM refresh_tokens WHERE id = $1', [row.id]);
+      return res.status(401).json({ error: 'Refresh token expired. Please log in again.' });
+    }
+
+    const user: User | null = await dbGet('SELECT * FROM users WHERE id = ?', [row.user_id]);
+    if (!user) {
+      return res.status(401).json({ error: 'User not found.' });
+    }
+
+    // Rotate: delete old refresh token, issue new pair
+    await pool.query('DELETE FROM refresh_tokens WHERE id = $1', [row.id]);
+    const newToken = signToken(user);
+    const newRefreshToken = await createRefreshToken(user.id);
+
+    res.json({
+      token: newToken,
+      refresh_token: newRefreshToken,
+    });
+  } catch (error) {
+    console.error('Refresh token error:', error);
+    res.status(500).json({ error: 'Failed to refresh token.' });
+  }
+});
+
+// ─── POST /api/auth/logout ────────────────────────────────────────────
+
+router.post('/logout', async (req: Request, res: Response) => {
+  try {
+    const { refresh_token } = req.body;
+    if (refresh_token && typeof refresh_token === 'string') {
+      const hash = crypto.createHash('sha256').update(refresh_token).digest('hex');
+      await pool.query('DELETE FROM refresh_tokens WHERE token_hash = $1', [hash]);
+    }
+    res.json({ message: 'Logged out successfully.' });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({ error: 'Logout failed.' });
   }
 });
 

@@ -20,6 +20,7 @@ export type User = {
 export type AuthResponse = {
   message: string;
   token?: string;
+  refresh_token?: string;
   user?: User;
 };
 
@@ -272,6 +273,28 @@ export async function resetPassword(
     return data;
   } catch (err) {
     throw new Error(extractError(err, 'Failed to reset password'));
+  }
+}
+
+export async function refreshAccessToken(
+  refresh_token: string,
+): Promise<{ token: string; refresh_token: string }> {
+  try {
+    const { data } = await api.post<{ token: string; refresh_token: string }>(
+      '/refresh',
+      { refresh_token },
+    );
+    return data;
+  } catch (err) {
+    throw new Error(extractError(err, 'Session expired. Please log in again.'));
+  }
+}
+
+export async function serverLogout(refresh_token: string): Promise<void> {
+  try {
+    await api.post('/logout', { refresh_token });
+  } catch {
+    // Best-effort
   }
 }
 
