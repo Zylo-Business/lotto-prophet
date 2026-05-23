@@ -11,12 +11,12 @@ export const LightColors = {
   success: '#10B981',
   warning: '#F59E0B',
   error: '#EF4444',
-  background: '#F8F9FE',
-  card: '#FFFFFF',
-  text: '#1A1A2E',
-  textSecondary: '#6B7280',
-  border: '#E5E7EB',
-  inputBg: '#F8F9FE',
+  background: '#EDEEF8',   /* cool indigo-tinted off-white — not pure white */
+  card: '#FFFFFF',          /* pure white cards lift off the background */
+  text: '#12122A',          /* deep indigo-tinted near-black */
+  textSecondary: '#5B6080', /* cooler medium tone */
+  border: '#D0D3E8',        /* visible cool-tinted border */
+  inputBg: '#F3F4FC',       /* lighter than background for input fields */
 };
 
 export const DarkColors = {

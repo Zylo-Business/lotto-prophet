@@ -111,6 +111,9 @@ function PostCard({
   const canModerate = ['owner', 'moderator'].includes(post.my_group_role ?? '');
   const canDelete = isOwner || canModerate;
   const imageUrls: string[] = post.image_urls ?? (post.image_url ? [post.image_url] : []);
+  const [bodyExpanded, setBodyExpanded] = useState(false);
+  const BODY_LIMIT = 220;
+  const bodyTruncated = !bodyExpanded && post.body.length > BODY_LIMIT;
 
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [comments, setComments] = useState<PostComment[]>([]);
@@ -278,9 +281,17 @@ function PostCard({
           </div>
 
           {/* Body */}
-          <p className="text-sm text-foreground/90 leading-relaxed mb-3 pl-[52px]">
-            {highlightHashtags(post.body)}
-          </p>
+          <div className="text-sm text-foreground/90 leading-relaxed mb-3 pl-[52px]">
+            <span>{highlightHashtags(bodyTruncated ? post.body.slice(0, BODY_LIMIT) + '…' : post.body)}</span>
+            {post.body.length > BODY_LIMIT && (
+              <button
+                onClick={() => setBodyExpanded((v) => !v)}
+                className="ml-1.5 text-indigo-600 dark:text-indigo-400 font-medium text-xs hover:underline"
+              >
+                {bodyExpanded ? 'Show less' : 'Show more'}
+              </button>
+            )}
+          </div>
 
           {/* Image grid — click any image to view full size */}
           {imageUrls.length > 0 && (
@@ -288,7 +299,7 @@ function PostCard({
               {imageUrls.slice(0, 4).map((url, i) => (
                 <button
                   key={i}
-                  className="relative rounded-xl overflow-hidden bg-muted group aspect-square block"
+                  className={`relative rounded-xl overflow-hidden bg-muted group block ${imageUrls.length === 1 ? 'h-56' : 'h-36'}`}
                   onClick={() => setLightboxIndex(i)}
                 >
                   <Image src={`${API_URL}${url}`} alt={`Image ${i + 1}`} fill className="object-cover group-hover:brightness-90 transition-all" unoptimized />
@@ -313,18 +324,9 @@ function PostCard({
 
           {/* Predicted numbers */}
           {post.predicted_numbers && (
-            <div className="pl-[52px] mb-3">
-              <div className="inline-flex flex-wrap gap-1.5">
-                {post.predicted_numbers.split(",").map((n) => (
-                  <span
-                    key={n}
-                    className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 text-xs font-bold flex items-center justify-center"
-                  >
-                    {n.trim()}
-                  </span>
-                ))}
-              </div>
-            </div>
+            <p className="pl-[52px] mb-3 text-xs text-muted-foreground">
+              🔢 {post.predicted_numbers}
+            </p>
           )}
 
           {/* Action bar */}

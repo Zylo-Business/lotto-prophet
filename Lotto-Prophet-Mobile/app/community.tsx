@@ -126,6 +126,8 @@ function PostCard({
   const canDelete = isOwner || canModerate;
   const imageUrls: string[] = post.image_urls ?? (post.image_url ? [post.image_url] : []);
   const BASE_URL = getBaseUrl();
+  const [bodyExpanded, setBodyExpanded] = useState(false);
+  const BODY_LIMIT = 220;
 
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [comments, setComments] = useState<PostComment[]>([]);
@@ -289,7 +291,19 @@ function PostCard({
       </View>
 
       <Text style={[styles.postTitle, { color: COLORS.text }]}>{post.title}</Text>
-      <Text style={[styles.postBody, { color: COLORS.text }]}>{post.body}</Text>
+      <Text
+        style={[styles.postBody, { color: COLORS.text }]}
+        numberOfLines={bodyExpanded ? undefined : 4}
+      >
+        {post.body}
+      </Text>
+      {post.body.length > BODY_LIMIT && (
+        <Pressable onPress={() => setBodyExpanded((v) => !v)} hitSlop={8}>
+          <Text style={{ color: COLORS.primary, fontSize: 13, fontWeight: '600', marginTop: 2 }}>
+            {bodyExpanded ? 'Show less' : 'Show more'}
+          </Text>
+        </Pressable>
+      )}
 
       {/* Post images — tap to view full size */}
       {imageUrls.length > 0 && (
@@ -299,7 +313,14 @@ function PostCard({
               <Pressable
                 key={i}
                 onPress={() => setLightboxIndex(i)}
-                style={{ position: 'relative', width: imageUrls.length === 1 ? '100%' : '48%', aspectRatio: 1, borderRadius: 10, overflow: 'hidden', backgroundColor: COLORS.border }}
+                style={{
+                  position: 'relative',
+                  width: imageUrls.length === 1 ? '100%' : '48%',
+                  height: imageUrls.length === 1 ? 200 : 130,
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  backgroundColor: COLORS.border,
+                }}
               >
                 <Image
                   source={{ uri: `${BASE_URL}${url}` }}
@@ -366,11 +387,9 @@ function PostCard({
 
       {post.predicted_numbers && (
         <View style={styles.numbersRow}>
-          {post.predicted_numbers.split(',').map((n) => (
-            <View key={n} style={styles.numberBubble}>
-              <Text style={styles.numberBubbleText}>{n.trim()}</Text>
-            </View>
-          ))}
+          <Text style={[styles.numberBubbleText, { color: COLORS.textSecondary, fontSize: 13 }]}>
+            🔢 {post.predicted_numbers}
+          </Text>
         </View>
       )}
 
