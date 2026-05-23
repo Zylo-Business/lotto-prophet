@@ -153,6 +153,17 @@ export async function fetchFeed() {
   }
 }
 
+export async function fetchTrending() {
+  const token = localStorage.getItem('token');
+  const api = makeApi(token || undefined);
+  try {
+    const { data } = await api.get('/trending');
+    return data.posts as CommunityPost[];
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to fetch trending'));
+  }
+}
+
 export async function likePost(postId: number) {
   const token = localStorage.getItem('token');
   const api = makeApi(token || undefined);

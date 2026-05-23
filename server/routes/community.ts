@@ -285,6 +285,26 @@ router.delete('/posts/:postId/like', authenticate, async (req: AuthRequest, res:
   }
 });
 
+router.get('/trending', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const posts = await dbAll(`
+      SELECT p.*, u.firstname, u.surname, g.name AS group_name,
+        (SELECT COUNT(*) FROM community_post_likes l WHERE l.post_id = p.id) AS like_count,
+        (SELECT COUNT(*) FROM community_post_comments c WHERE c.post_id = p.id) AS comment_count
+      FROM community_group_posts p
+      JOIN users u ON p.user_id = u.id
+      JOIN community_groups g ON p.group_id = g.id
+      WHERE g.is_private = 0 AND p.created_at > NOW() - INTERVAL '7 days'
+      ORDER BY like_count DESC, comment_count DESC
+      LIMIT 5
+    `, []);
+    return res.json({ posts });
+  } catch (error) {
+    console.error('GET /trending error:', error);
+    return res.status(500).json({ error: 'Failed to fetch trending posts' });
+  }
+});
+
 router.get('/feed', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;

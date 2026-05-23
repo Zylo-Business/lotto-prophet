@@ -68,9 +68,11 @@ export type GroupPost = {
   liked_by_me?: 0 | 1;
 };
 
-export async function fetchGroups(): Promise<CommunityGroup[]> {
+export async function fetchGroups(token?: string): Promise<CommunityGroup[]> {
   try {
-    const { data } = await api.get('/groups');
+    const { data } = await api.get('/groups', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
     return data.groups ?? data;
   } catch (err) {
     throw new Error(extractError(err, 'Failed to load groups'));
@@ -106,11 +108,11 @@ export async function createGroup(
   }
 }
 
-export async function joinGroup(groupId: number, token: string): Promise<{ message: string }> {
+export async function joinGroup(groupId: number, token: string, joinCode?: string): Promise<{ message: string }> {
   try {
     const { data } = await api.post(
       `/groups/${groupId}/join`,
-      {},
+      joinCode ? { join_code: joinCode } : {},
       { headers: { Authorization: `Bearer ${token}` } },
     );
     return data;
