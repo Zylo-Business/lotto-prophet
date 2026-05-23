@@ -45,3 +45,38 @@ export const postImagesUpload = multer({
   fileFilter: imageFilter,
   limits: { fileSize: 10 * 1024 * 1024 },
 }).array('images', 5);
+
+const lessonStorage = multer.diskStorage({
+  destination(req, file, cb) {
+    const dir = 'uploads/lessons';
+    ensureDir(dir);
+    cb(null, dir);
+  },
+  filename(req, file, cb) {
+    const ext = path.extname(file.originalname).toLowerCase() || '.bin';
+    cb(null, `${randomUUID()}${ext}`);
+  },
+});
+
+const lessonFileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+  const allowed = [
+    'application/pdf',
+    'application/zip',
+    'application/x-zip-compressed',
+    'video/mp4',
+    'video/quicktime',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  ];
+  if (allowed.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only PDF, ZIP, MP4, MOV, DOCX, and PPTX files are allowed'));
+  }
+};
+
+export const lessonFileUpload = multer({
+  storage: lessonStorage,
+  fileFilter: lessonFileFilter,
+  limits: { fileSize: 200 * 1024 * 1024 },
+}).single('file');

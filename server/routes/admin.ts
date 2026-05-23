@@ -1,7 +1,9 @@
 import { Router, type Request, type Response } from 'express';
+import fs from 'fs';
 import { dbRun, dbAll, dbGet } from '../db/db.js';
 import { authenticateAdmin, type AuthRequest } from '../middlewares/auth.js';
 import { sendPushToAll } from '../utils/push.js';
+import { lessonFileUpload } from '../middlewares/upload.js';
 
 const router = Router();
 
@@ -156,17 +158,26 @@ router.get('/draws/latest', authenticateAdmin, async (_req: AuthRequest, res: Re
 });
 
 /**
- * GET /api/admin/draws/all?source=&limit=&offset=
+ * GET /api/admin/draws/all?sources=src1,src2&limit=&offset=
  */
 router.get('/draws/all', authenticateAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const source = req.query.source as string | undefined;
+    const sourcesParam = req.query.sources as string | undefined;
     const limit = Math.max(1, Math.min(100, parseInt(req.query.limit as string) || 50));
     const offset = Math.max(0, parseInt(req.query.offset as string) || 0);
 
     const filters: string[] = [];
     const params: any[] = [];
-    if (source) { filters.push('source = ?'); params.push(source); }
+    if (sourcesParam) {
+      const sources = sourcesParam.split(',').map((s) => s.trim()).filter(Boolean);
+      if (sources.length === 1) {
+        filters.push('source = ?');
+        params.push(sources[0]);
+      } else if (sources.length > 1) {
+        filters.push(`source IN (${sources.map(() => '?').join(', ')})`);
+        params.push(...sources);
+      }
+    }
 
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 
@@ -486,6 +497,249 @@ router.delete('/university/lessons/:id', authenticateAdmin, async (req: AuthRequ
   } catch (err) {
     console.error('Error deleting lesson:', err);
     res.status(500).json({ error: 'Failed to delete lesson' });
+  }
+});
+
+// ─── Draws — Edit ────────────────────────────────────────────────────────────
+
+/**
+ * PUT /api/admin/draws/:id
+ */
+router.put('/draws/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) { res.status(400).json({ error: 'Invalid draw ID' }); return; }
+
+    const { event_number, date, source, n_numbers, m_numbers } = req.body;
+
+    if (!n_numbers || !Array.isArray(n_numbers) || n_numbers.length !== 5) {
+      res.status(400).json({ error: 'n_numbers must be an array of exactly 5 numbers' }); return;
+    }
+    if (m_numbers && (!Array.isArray(m_numbers) || m_numbers.length !== 5)) {
+      res.status(400).json({ error: 'm_numbers must be an array of exactly 5 numbers' }); return;
+    }
+    if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      res.status(400).json({ error: 'date must be in YYYY-MM-DD format' }); return;
+    }
+
+    const draw = await dbGet('SELECT * FROM draws WHERE id = ?', [id]);
+    if (!draw) { res.status(404).json({ error: 'Draw not found' }); return; }
+
+    let dayId = draw.day_id;
+    if (date) {
+      const dateObj = new Date(date + 'T00:00:00');
+      const year = dateObj.getFullYear();
+      const month = dateObj.getMonth() + 1;
+      const day = dateObj.getDate();
+      const weekday = dateObj.getDay();
+      const weekday_name = WEEKDAY_NAMES[weekday];
+
+      let dayRow = await dbGet('SELECT id FROM days WHERE date = ?', [date]);
+      if (!dayRow) {
+        const result = await dbRun(
+          'INSERT INTO days (date, year, month, day, weekday, weekday_name) VALUES (?, ?, ?, ?, ?, ?)',
+          [date, year, month, day, weekday, weekday_name],
+        );
+        dayRow = { id: result.lastID };
+      }
+      dayId = dayRow.id;
+    }
+
+    await dbRun(
+      'UPDATE draws SET event_number = ?, day_id = ?, source = ? WHERE id = ?',
+      [event_number ?? draw.event_number, dayId, source ?? draw.source, id],
+    );
+
+    // Delete existing number_sets (cascades to numbers)
+    const sets = await dbAll('SELECT id FROM number_sets WHERE draw_id = ?', [id]);
+    for (const s of sets) {
+      await dbRun('DELETE FROM numbers WHERE number_set_id = ?', [s.id]);
+    }
+    await dbRun('DELETE FROM number_sets WHERE draw_id = ?', [id]);
+
+    // Re-insert fresh
+    const nSetResult = await dbRun('INSERT INTO number_sets (draw_id, set_type) VALUES (?, ?)', [id, 'N']);
+    for (let i = 0; i < 5; i++) {
+      await dbRun('INSERT INTO numbers (number_set_id, position, value) VALUES (?, ?, ?)', [nSetResult.lastID, i + 1, n_numbers[i]]);
+    }
+    if (m_numbers) {
+      const mSetResult = await dbRun('INSERT INTO number_sets (draw_id, set_type) VALUES (?, ?)', [id, 'M']);
+      for (let i = 0; i < 5; i++) {
+        await dbRun('INSERT INTO numbers (number_set_id, position, value) VALUES (?, ?, ?)', [mSetResult.lastID, i + 1, m_numbers[i]]);
+      }
+    }
+
+    const updatedDraw = await dbGet(
+      'SELECT * FROM v_draws_flat WHERE source = ? AND event_number = ?',
+      [source ?? draw.source, event_number ?? draw.event_number],
+    );
+    res.json(updatedDraw);
+  } catch (err) {
+    console.error('Error updating draw:', err);
+    res.status(500).json({ error: 'Failed to update draw' });
+  }
+});
+
+// ─── University — Enrollments ─────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/university/courses/:id/enrollments
+ */
+router.get('/university/courses/:id/enrollments', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const courseId = Number(req.params.id);
+    const enrollments = await dbAll(
+      `SELECT ce.*, u.firstname, u.surname, u.email
+       FROM course_enrollments ce
+       JOIN users u ON u.id = ce.user_id
+       WHERE ce.course_id = ?
+       ORDER BY ce.enrolled_at DESC`,
+      [courseId],
+    );
+    res.json(enrollments);
+  } catch (err) {
+    console.error('Error fetching enrollments:', err);
+    res.status(500).json({ error: 'Failed to fetch enrollments' });
+  }
+});
+
+/**
+ * POST /api/admin/university/courses/:id/enrollments
+ */
+router.post('/university/courses/:id/enrollments', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const courseId = Number(req.params.id);
+    let { user_id, email } = req.body;
+
+    if (!user_id && !email) {
+      res.status(400).json({ error: 'user_id or email is required' }); return;
+    }
+
+    if (!user_id && email) {
+      const user = await dbGet('SELECT id FROM users WHERE email = ?', [email]);
+      if (!user) { res.status(404).json({ error: 'User not found' }); return; }
+      user_id = user.id;
+    }
+
+    try {
+      const result = await dbRun(
+        'INSERT INTO course_enrollments (course_id, user_id) VALUES (?, ?)',
+        [courseId, user_id],
+      );
+      const enrollment = await dbGet(
+        `SELECT ce.*, u.firstname, u.surname, u.email
+         FROM course_enrollments ce
+         JOIN users u ON u.id = ce.user_id
+         WHERE ce.id = ?`,
+        [result.lastID],
+      );
+      res.status(201).json(enrollment);
+    } catch (insertErr: any) {
+      if (insertErr?.message?.includes('unique') || insertErr?.code === '23505') {
+        res.status(409).json({ error: 'User is already enrolled in this course' }); return;
+      }
+      throw insertErr;
+    }
+  } catch (err) {
+    console.error('Error enrolling user:', err);
+    res.status(500).json({ error: 'Failed to enroll user' });
+  }
+});
+
+/**
+ * DELETE /api/admin/university/enrollments/:id
+ */
+router.delete('/university/enrollments/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    await dbRun('DELETE FROM course_enrollments WHERE id = ?', [id]);
+    res.json({ message: 'Enrollment deleted' });
+  } catch (err) {
+    console.error('Error deleting enrollment:', err);
+    res.status(500).json({ error: 'Failed to delete enrollment' });
+  }
+});
+
+// ─── University — Lesson Media ────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/university/lessons/:id/media
+ */
+router.get('/university/lessons/:id/media', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const lessonId = Number(req.params.id);
+    const media = await dbAll(
+      'SELECT * FROM lesson_media WHERE lesson_id = ? ORDER BY sort_order, id',
+      [lessonId],
+    );
+    res.json(media);
+  } catch (err) {
+    console.error('Error fetching lesson media:', err);
+    res.status(500).json({ error: 'Failed to fetch lesson media' });
+  }
+});
+
+/**
+ * POST /api/admin/university/lessons/:id/media
+ */
+router.post('/university/lessons/:id/media', authenticateAdmin, (req: AuthRequest, res: Response) => {
+  lessonFileUpload(req as any, res as any, async (uploadErr) => {
+    if (uploadErr) {
+      res.status(400).json({ error: uploadErr.message }); return;
+    }
+    try {
+      const lessonId = Number(req.params.id);
+      const { title, media_type, url, sort_order } = req.body;
+
+      if (!title) { res.status(400).json({ error: 'title is required' }); return; }
+      if (!media_type || !['video', 'file'].includes(media_type)) {
+        res.status(400).json({ error: 'media_type must be "video" or "file"' }); return;
+      }
+
+      let fileUrl = url || '';
+      if ((req as any).file) {
+        fileUrl = `/uploads/lessons/${(req as any).file.filename}`;
+      }
+
+      if (!fileUrl) { res.status(400).json({ error: 'url or file is required' }); return; }
+
+      const result = await dbRun(
+        'INSERT INTO lesson_media (lesson_id, media_type, title, url, sort_order) VALUES (?, ?, ?, ?, ?)',
+        [lessonId, media_type, title, fileUrl, Number(sort_order) || 0],
+      );
+      const media = await dbGet('SELECT * FROM lesson_media WHERE id = ?', [result.lastID]);
+      res.status(201).json(media);
+    } catch (err) {
+      console.error('Error adding lesson media:', err);
+      res.status(500).json({ error: 'Failed to add lesson media' });
+    }
+  });
+});
+
+/**
+ * DELETE /api/admin/university/media/:id
+ */
+router.delete('/university/media/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const media = await dbGet('SELECT * FROM lesson_media WHERE id = ?', [id]);
+    if (!media) { res.status(404).json({ error: 'Media not found' }); return; }
+
+    // Delete file from disk if it's an uploaded lesson file
+    if (media.url && media.url.startsWith('/uploads/lessons/')) {
+      const filePath = media.url.slice(1); // remove leading slash
+      try {
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      } catch (fileErr) {
+        console.warn('Could not delete media file:', fileErr);
+      }
+    }
+
+    await dbRun('DELETE FROM lesson_media WHERE id = ?', [id]);
+    res.json({ message: 'Media deleted' });
+  } catch (err) {
+    console.error('Error deleting media:', err);
+    res.status(500).json({ error: 'Failed to delete media' });
   }
 });
 

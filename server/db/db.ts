@@ -306,6 +306,34 @@ export const initDb = async () => {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_community_post_likes_post ON community_post_likes(post_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_community_post_likes_user ON community_post_likes(user_id)`);
 
+  // course_enrollments table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS course_enrollments (
+      id SERIAL PRIMARY KEY,
+      course_id INT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+      user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed','dropped')),
+      UNIQUE (course_id, user_id)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_course_enrollments_course ON course_enrollments(course_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_course_enrollments_user ON course_enrollments(user_id)`);
+
+  // lesson_media table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS lesson_media (
+      id SERIAL PRIMARY KEY,
+      lesson_id INT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+      media_type VARCHAR(10) NOT NULL DEFAULT 'video' CHECK (media_type IN ('video','file')),
+      title VARCHAR(255) NOT NULL,
+      url VARCHAR(1000) NOT NULL,
+      sort_order INT DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_lesson_media_lesson ON lesson_media(lesson_id)`);
+
   // Flat view for easy reads — drop first so column renames always apply
   await pool.query(`DROP VIEW IF EXISTS v_draws_flat CASCADE`);
   await pool.query(`
