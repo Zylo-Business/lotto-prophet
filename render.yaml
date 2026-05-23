@@ -4,8 +4,8 @@ services:
     runtime: node
     repo: "./"
     rootDir: server
-    buildCommand: "cd server && npm ci && npm run build"
-    startCommand: "cd server && npm run start"
+    buildCommand: "cd server && yarn install --frozen-lockfile && yarn build"
+    startCommand: "cd server && yarn start"
     env:
       - key: NODE_ENV
         value: production
