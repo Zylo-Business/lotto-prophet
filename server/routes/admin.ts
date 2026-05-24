@@ -824,4 +824,110 @@ router.post('/notifications/broadcast', authenticateAdmin, async (req: AuthReque
   }
 });
 
+// ─── Admin Predictions ───────────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/predictions
+ */
+router.get('/predictions', authenticateAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const rows = await dbAll(
+      `SELECT p.*, u.firstname || ' ' || u.surname AS created_by_name
+       FROM admin_predictions p
+       LEFT JOIN users u ON u.id = p.created_by
+       ORDER BY p.draw_date DESC, p.created_at DESC`,
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('Error fetching predictions:', err);
+    res.status(500).json({ error: 'Failed to fetch predictions' });
+  }
+});
+
+/**
+ * POST /api/admin/predictions
+ */
+router.post('/predictions', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { title, game_name, draw_date, numbers, machine_numbers, notes, is_published, prediction_type, price } = req.body;
+    if (!title || !game_name || !draw_date || !numbers) {
+      res.status(400).json({ error: 'title, game_name, draw_date, and numbers are required' }); return;
+    }
+    const type = prediction_type === 'paid' ? 'paid' : 'free';
+    const priceVal = type === 'paid' ? (parseFloat(price) || 0) : 0;
+    const result = await dbRun(
+      `INSERT INTO admin_predictions (title, game_name, draw_date, numbers, machine_numbers, notes, is_published, prediction_type, price, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [title, game_name, draw_date, JSON.stringify(numbers), machine_numbers ? JSON.stringify(machine_numbers) : null, notes || null, is_published !== false ? 1 : 0, type, priceVal, req.user?.id ?? null],
+    );
+    const created = await dbGet('SELECT * FROM admin_predictions WHERE id = ?', [result.lastID]);
+    res.status(201).json(created);
+  } catch (err) {
+    console.error('Error creating prediction:', err);
+    res.status(500).json({ error: 'Failed to create prediction' });
+  }
+});
+
+/**
+ * PUT /api/admin/predictions/:id
+ */
+router.put('/predictions/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const { title, game_name, draw_date, numbers, machine_numbers, notes, is_published, prediction_type, price } = req.body;
+    const existing = await dbGet('SELECT id FROM admin_predictions WHERE id = ?', [id]);
+    if (!existing) { res.status(404).json({ error: 'Prediction not found' }); return; }
+    const type = prediction_type === 'paid' ? 'paid' : 'free';
+    const priceVal = type === 'paid' ? (parseFloat(price) || 0) : 0;
+    await dbRun(
+      `UPDATE admin_predictions SET title=?, game_name=?, draw_date=?, numbers=?, machine_numbers=?, notes=?, is_published=?, prediction_type=?, price=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+      [title, game_name, draw_date, JSON.stringify(numbers), machine_numbers ? JSON.stringify(machine_numbers) : null, notes || null, is_published !== false ? 1 : 0, type, priceVal, id],
+    );
+    const updated = await dbGet('SELECT * FROM admin_predictions WHERE id = ?', [id]);
+    res.json(updated);
+  } catch (err) {
+    console.error('Error updating prediction:', err);
+    res.status(500).json({ error: 'Failed to update prediction' });
+  }
+});
+
+/**
+ * DELETE /api/admin/predictions/:id
+ */
+router.delete('/predictions/:id', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    await dbRun('DELETE FROM admin_predictions WHERE id = ?', [id]);
+    res.json({ message: 'Prediction deleted' });
+  } catch (err) {
+    console.error('Error deleting prediction:', err);
+    res.status(500).json({ error: 'Failed to delete prediction' });
+  }
+});
+
+// ─── Subscription Management ─────────────────────────────────────────────────
+
+/**
+ * PUT /api/admin/users/:id/subscription
+ */
+router.put('/users/:id/subscription', authenticateAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    const { subscription_plan, subscription_expires_at } = req.body;
+    if (!subscription_plan) { res.status(400).json({ error: 'subscription_plan is required' }); return; }
+    const valid = ['free', 'basic', 'pro', 'premium'];
+    if (!valid.includes(subscription_plan)) { res.status(400).json({ error: `plan must be one of: ${valid.join(', ')}` }); return; }
+    await dbRun(
+      `UPDATE users SET subscription_plan=?, subscription_expires_at=? WHERE id=?`,
+      [subscription_plan, subscription_expires_at || null, id],
+    );
+    const user = await dbGet('SELECT id, firstname, surname, email, subscription_plan, subscription_expires_at FROM users WHERE id = ?', [id]);
+    if (!user) { res.status(404).json({ error: 'User not found' }); return; }
+    res.json(user);
+  } catch (err) {
+    console.error('Error updating subscription:', err);
+    res.status(500).json({ error: 'Failed to update subscription' });
+  }
+});
+
 export default router;

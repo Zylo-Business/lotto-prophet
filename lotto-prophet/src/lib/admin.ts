@@ -46,6 +46,8 @@ export type AdminUser = {
   country_code: string;
   mobile_number: string;
   created_at: string;
+  subscription_plan: string;
+  subscription_expires_at: string | null;
 };
 
 export type AdminGroup = {
@@ -186,6 +188,85 @@ export async function updateAdminDraw(token: string, id: number, body: Partial<A
     return data;
   } catch (err) {
     throw new Error(extractError(err, 'Failed to update draw'));
+  }
+}
+
+// ─── Predictions ─────────────────────────────────────────────────────────────
+
+export type AdminPrediction = {
+  id: number;
+  title: string;
+  game_name: string;
+  draw_date: string;
+  numbers: string;
+  machine_numbers: string | null;
+  notes: string | null;
+  is_published: number;
+  prediction_type: "free" | "paid";
+  price: number;
+  created_by: number | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminPredictionInput = {
+  title: string;
+  game_name: string;
+  draw_date: string;
+  numbers: number[];
+  machine_numbers?: number[] | null;
+  notes?: string;
+  is_published?: boolean;
+  prediction_type?: "free" | "paid";
+  price?: number;
+};
+
+export async function fetchAdminPredictions(token: string) {
+  try {
+    const { data } = await makeApi(token).get('/predictions');
+    return data as AdminPrediction[];
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to fetch predictions'));
+  }
+}
+
+export async function createAdminPrediction(token: string, body: AdminPredictionInput) {
+  try {
+    const { data } = await makeApi(token).post('/predictions', body);
+    return data as AdminPrediction;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to create prediction'));
+  }
+}
+
+export async function updateAdminPrediction(token: string, id: number, body: AdminPredictionInput) {
+  try {
+    const { data } = await makeApi(token).put(`/predictions/${id}`, body);
+    return data as AdminPrediction;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to update prediction'));
+  }
+}
+
+export async function deleteAdminPrediction(token: string, id: number) {
+  try {
+    const { data } = await makeApi(token).delete(`/predictions/${id}`);
+    return data;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to delete prediction'));
+  }
+}
+
+export async function updateUserSubscription(token: string, userId: number, plan: string, expires_at?: string) {
+  try {
+    const { data } = await makeApi(token).put(`/users/${userId}/subscription`, {
+      subscription_plan: plan,
+      subscription_expires_at: expires_at || null,
+    });
+    return data;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to update subscription'));
   }
 }
 

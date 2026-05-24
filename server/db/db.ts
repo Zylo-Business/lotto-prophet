@@ -363,6 +363,47 @@ export const initDb = async () => {
     ORDER BY d.event_number
   `);
 
+  // admin_predictions table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS admin_predictions (
+      id SERIAL PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      game_name VARCHAR(100) NOT NULL,
+      draw_date DATE NOT NULL,
+      numbers TEXT NOT NULL,
+      machine_numbers TEXT DEFAULT NULL,
+      notes TEXT DEFAULT NULL,
+      is_published SMALLINT NOT NULL DEFAULT 1,
+      prediction_type VARCHAR(10) NOT NULL DEFAULT 'free',
+      price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      created_by INT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`ALTER TABLE admin_predictions ADD COLUMN IF NOT EXISTS prediction_type VARCHAR(10) NOT NULL DEFAULT 'free'`);
+  await pool.query(`ALTER TABLE admin_predictions ADD COLUMN IF NOT EXISTS price DECIMAL(10,2) NOT NULL DEFAULT 0.00`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_admin_predictions_date ON admin_predictions(draw_date DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_admin_predictions_game ON admin_predictions(game_name)`);
+
+  // prediction_purchases table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS prediction_purchases (
+      id SERIAL PRIMARY KEY,
+      user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      prediction_id INT NOT NULL REFERENCES admin_predictions(id) ON DELETE CASCADE,
+      amount_paid DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, prediction_id)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pred_purchases_user ON prediction_purchases(user_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pred_purchases_pred ON prediction_purchases(prediction_id)`);
+
+  // subscription columns on users
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_plan VARCHAR(20) NOT NULL DEFAULT 'free'`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_expires_at TIMESTAMP DEFAULT NULL`);
+
   // refresh_tokens table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS refresh_tokens (

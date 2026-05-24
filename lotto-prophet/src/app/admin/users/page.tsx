@@ -2,7 +2,15 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { fetchAdminUsers, deleteAdminUser, type AdminUser } from "@/lib/admin";
+import { fetchAdminUsers, deleteAdminUser, updateUserSubscription, type AdminUser } from "@/lib/admin";
+
+const PLANS = ["free", "basic", "pro", "premium"] as const;
+const PLAN_COLORS: Record<string, string> = {
+  free: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300",
+  basic: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+  pro: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300",
+  premium: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+};
 
 const PAGE_SIZE = 50;
 
@@ -41,6 +49,45 @@ function DeleteModal({ user, onConfirm, onCancel }: { user: AdminUser; onConfirm
   );
 }
 
+function SubscriptionModal({ user, onSave, onCancel, saving }: {
+  user: AdminUser; onSave: (plan: string, expires: string) => void; onCancel: () => void; saving: boolean;
+}) {
+  const [plan, setPlan] = useState(user.subscription_plan || "free");
+  const [expires, setExpires] = useState(user.subscription_expires_at?.slice(0, 10) ?? "");
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-sm rounded-xl bg-white dark:bg-gray-800 shadow-xl p-6">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-1">Update Subscription</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{user.firstname} {user.surname}</p>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Plan</label>
+            <select className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={plan} onChange={e => setPlan(e.target.value)}>
+              {PLANS.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Expires (leave blank for no expiry)</label>
+            <input type="date" className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={expires} onChange={e => setExpires(e.target.value)} />
+          </div>
+        </div>
+        <div className="flex gap-3 mt-5">
+          <button onClick={() => onSave(plan, expires)} disabled={saving}
+            className="flex-1 rounded-lg bg-indigo-600 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">
+            {saving ? "Saving…" : "Save"}
+          </button>
+          <button onClick={onCancel}
+            className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 py-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminUsersPage() {
   const router = useRouter();
   const [token, setToken] = useState<string | null>(null);
@@ -53,6 +100,8 @@ export default function AdminUsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [subTarget, setSubTarget] = useState<AdminUser | null>(null);
+  const [savingSub, setSavingSub] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -92,9 +141,21 @@ export default function AdminUsersPage() {
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
 
+  async function handleSaveSub(plan: string, expires: string) {
+    if (!token || !subTarget) return;
+    setSavingSub(true);
+    try {
+      const updated = await updateUserSubscription(token, subTarget.id, plan, expires || undefined);
+      setUsers(prev => prev.map(u => u.id === updated.id ? { ...u, subscription_plan: updated.subscription_plan, subscription_expires_at: updated.subscription_expires_at } : u));
+      setSubTarget(null);
+    } catch (e: any) { setError(e.message); }
+    finally { setSavingSub(false); }
+  }
+
   return (
     <>
       {deleteTarget && <DeleteModal user={deleteTarget} onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} />}
+      {subTarget && <SubscriptionModal user={subTarget} onSave={handleSaveSub} onCancel={() => setSubTarget(null)} saving={savingSub} />}
 
       {/* Page header */}
       <div className="block items-center justify-between border-b border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 p-4 sm:flex">
@@ -136,6 +197,7 @@ export default function AdminUsersPage() {
               <th className="p-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Name</th>
               <th className="p-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider hidden sm:table-cell">Phone</th>
               <th className="p-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider hidden md:table-cell">Joined</th>
+              <th className="p-4 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider hidden lg:table-cell">Subscription</th>
               <th className="p-4 text-right text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
@@ -171,12 +233,26 @@ export default function AdminUsersPage() {
                 <td className="p-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 tabular-nums hidden md:table-cell">
                   {new Date(user.created_at).toLocaleDateString()}
                 </td>
+                <td className="p-4 whitespace-nowrap hidden lg:table-cell">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${PLAN_COLORS[user.subscription_plan || "free"] ?? PLAN_COLORS.free}`}>
+                    {user.subscription_plan || "free"}
+                  </span>
+                  {user.subscription_expires_at && (
+                    <p className="text-xs text-gray-400 mt-0.5">Until {new Date(user.subscription_expires_at).toLocaleDateString()}</p>
+                  )}
+                </td>
                 <td className="p-4 whitespace-nowrap text-right">
-                  <button onClick={() => setDeleteTarget(user)}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    Delete
-                  </button>
+                  <div className="flex items-center justify-end gap-2">
+                    <button onClick={() => setSubTarget(user)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 dark:border-indigo-700 px-3 py-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
+                      Subscription
+                    </button>
+                    <button onClick={() => setDeleteTarget(user)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      Delete
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

@@ -9,6 +9,7 @@ import universityRoutes from './routes/university.js';
 import toolsRoutes from './routes/tools.js';
 import communityRoutes from './routes/community.js';
 import aiPredictRoutes from './routes/ai-predict.js';
+import predictionsRoutes from './routes/predictions.js';
 import morgan from 'morgan';
 import cors from 'cors';
 import { setupSyncCron } from './utils/schedule-sync.js';
@@ -35,6 +36,7 @@ app.use('/api/university', universityRoutes);
 app.use('/api/tools', toolsRoutes);
 app.use('/api/community', communityRoutes);
 app.use('/api/ai-predict', aiPredictRoutes);
+app.use('/api/predictions', predictionsRoutes);
 
 app.get('/', (req: Request, res: Response) => {
   res.send('Welcome to the Lotto Prophet API!');
