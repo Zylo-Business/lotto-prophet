@@ -89,6 +89,12 @@ export function getDrawDisplayName(source: string): string {
   const map: Record<string, string> = {
     lucky: 'Lucky Tuesday',
     alpha: 'Alpha Lotto',
+    'alpha one': 'Alpha One',
+    'alpha express': 'Alpha Express',
+    express: 'Alpha Express',
+    nla: 'NLA',
+    'nla rush': 'NLA Rush',
+    rush: 'NLA Rush',
   };
   return map[source.toLowerCase()] ?? source;
 }
@@ -98,6 +104,12 @@ export function getDrawIcon(source: string): string {
   const map: Record<string, string> = {
     lucky: 'star',
     alpha: 'trophy',
+    'alpha one': 'medal',
+    'alpha express': 'flash',
+    express: 'flash',
+    nla: 'radio-button-on',
+    'nla rush': 'rocket',
+    rush: 'rocket',
   };
   return map[source.toLowerCase()] ?? 'ticket';
 }
@@ -107,6 +119,12 @@ export function getDrawColor(source: string): string {
   const map: Record<string, string> = {
     lucky: '#F59E0B',
     alpha: '#6C63FF',
+    'alpha one': '#8B5CF6',
+    'alpha express': '#EC4899',
+    express: '#EC4899',
+    nla: '#10B981',
+    'nla rush': '#EF4444',
+    rush: '#EF4444',
   };
   return map[source.toLowerCase()] ?? '#10B981';
 }

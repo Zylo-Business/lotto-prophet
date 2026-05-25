@@ -47,8 +47,11 @@ export type CommunityGroup = {
   name: string;
   description: string;
   is_private: number;
+  join_code?: string | null;
   member_count?: number;
   created_at: string;
+  is_member?: number;
+  my_role?: 'owner' | 'moderator' | 'member' | null;
 };
 
 export type GroupPost = {
@@ -59,18 +62,44 @@ export type GroupPost = {
   body: string;
   post_type: 'discussion' | 'forecast';
   predicted_numbers?: string;
+  image_url?: string | null;
+  image_urls?: string[];
   created_at: string;
   firstname?: string;
   surname?: string;
+  avatar_url?: string | null;
   group_name?: string;
   like_count?: number;
   comment_count?: number;
   liked_by_me?: 0 | 1;
+  my_group_role?: 'owner' | 'moderator' | 'member' | null;
 };
 
-export async function fetchGroups(): Promise<CommunityGroup[]> {
+export type CommunityMember = {
+  id: number;
+  firstname: string;
+  surname: string;
+  email: string;
+  joined_at: string;
+  role?: 'owner' | 'moderator' | 'member';
+};
+
+export type PostComment = {
+  id: number;
+  post_id: number;
+  user_id: number;
+  body: string;
+  created_at: string;
+  firstname: string;
+  surname: string;
+  avatar_url?: string | null;
+};
+
+export async function fetchGroups(token?: string): Promise<CommunityGroup[]> {
   try {
-    const { data } = await api.get('/groups');
+    const { data } = await api.get('/groups', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
     return data.groups ?? data;
   } catch (err) {
     throw new Error(extractError(err, 'Failed to load groups'));
@@ -106,11 +135,11 @@ export async function createGroup(
   }
 }
 
-export async function joinGroup(groupId: number, token: string): Promise<{ message: string }> {
+export async function joinGroup(groupId: number, token: string, joinCode?: string): Promise<{ message: string }> {
   try {
     const { data } = await api.post(
       `/groups/${groupId}/join`,
-      {},
+      joinCode ? { join_code: joinCode } : {},
       { headers: { Authorization: `Bearer ${token}` } },
     );
     return data;
@@ -161,6 +190,177 @@ export async function unlikePost(postId: number, token: string): Promise<void> {
     await api.delete(`/posts/${postId}/like`, { headers: { Authorization: `Bearer ${token}` } });
   } catch (err) {
     throw new Error(extractError(err, 'Failed to unlike post'));
+  }
+}
+
+export async function fetchPostComments(postId: number, token: string): Promise<PostComment[]> {
+  try {
+    const { data } = await api.get(`/posts/${postId}/comments`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return data.comments ?? [];
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to fetch comments'));
+  }
+}
+
+export async function addComment(postId: number, body: string, token: string): Promise<void> {
+  try {
+    await api.post(`/posts/${postId}/comments`, { body }, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to add comment'));
+  }
+}
+
+export type ImageAsset = { uri: string; mimeType?: string; filename?: string };
+
+export async function createGroupPostWithImages(
+  groupId: number,
+  title: string,
+  body: string,
+  token: string,
+  postType: 'discussion' | 'forecast' = 'discussion',
+  predictedNumbers?: string,
+  images?: ImageAsset[],
+): Promise<GroupPost> {
+  try {
+    const formData = new FormData();
+    formData.append('title', title);
+    formData.append('body', body);
+    formData.append('post_type', postType);
+    if (predictedNumbers) formData.append('predicted_numbers', predictedNumbers);
+    images?.forEach((img, i) => {
+      const filename = img.filename ?? img.uri.split('/').pop() ?? `photo${i}.jpg`;
+      formData.append('images', { uri: img.uri, type: img.mimeType ?? 'image/jpeg', name: filename } as any);
+    });
+    const response = await fetch(`${BASE_URL}/api/community/groups/${groupId}/posts`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to create post');
+    return data.post;
+  } catch (err) {
+    if (err instanceof Error) throw err;
+    throw new Error('Failed to create post');
+  }
+}
+
+export async function deleteGroupPost(groupId: number, postId: number, token: string): Promise<void> {
+  try {
+    await api.delete(`/groups/${groupId}/posts/${postId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to delete post'));
+  }
+}
+
+export async function fetchGroupDetails(groupId: number, token: string): Promise<{ group: CommunityGroup; members: CommunityMember[]; my_role: string | null }> {
+  try {
+    const { data } = await api.get(`/groups/${groupId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return data;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to fetch group details'));
+  }
+}
+
+export async function updateGroup(
+  groupId: number,
+  name: string,
+  description: string,
+  isPrivate: boolean,
+  joinCode: string | undefined,
+  token: string,
+): Promise<CommunityGroup> {
+  try {
+    const { data } = await api.put(
+      `/groups/${groupId}`,
+      { name, description, is_private: isPrivate ? 1 : 0, join_code: joinCode },
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    return data.group as CommunityGroup;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to update group'));
+  }
+}
+
+export async function removeMember(groupId: number, memberId: number, token: string): Promise<void> {
+  try {
+    await api.delete(`/groups/${groupId}/members/${memberId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to remove member'));
+  }
+}
+
+export async function promoteMember(groupId: number, memberId: number, token: string): Promise<void> {
+  try {
+    await api.post(`/groups/${groupId}/members/${memberId}/promote`, {}, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to promote member'));
+  }
+}
+
+export async function demoteMember(groupId: number, memberId: number, token: string): Promise<void> {
+  try {
+    await api.post(`/groups/${groupId}/members/${memberId}/demote`, {}, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to demote member'));
+  }
+}
+
+export async function updateComment(postId: number, commentId: number, body: string, token: string): Promise<PostComment> {
+  try {
+    const { data } = await api.put(`/posts/${postId}/comments/${commentId}`, { body }, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return data.comment as PostComment;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to update comment'));
+  }
+}
+
+export async function updateGroupPost(
+  postId: number,
+  title: string,
+  body: string,
+  token: string,
+  postType: 'discussion' | 'forecast' = 'discussion',
+  predictedNumbers?: string,
+  images?: ImageAsset[],
+): Promise<GroupPost> {
+  try {
+    const formData = new FormData();
+    formData.append('title', title);
+    formData.append('body', body);
+    formData.append('post_type', postType);
+    if (predictedNumbers) formData.append('predicted_numbers', predictedNumbers);
+    images?.forEach((img, i) => {
+      const filename = img.filename ?? img.uri.split('/').pop() ?? `photo${i}.jpg`;
+      formData.append('images', { uri: img.uri, type: img.mimeType ?? 'image/jpeg', name: filename } as any);
+    });
+    const response = await fetch(`${BASE_URL}/api/community/posts/${postId}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Failed to update post');
+    return data.post;
+  } catch (err) {
+    if (err instanceof Error) throw err;
+    throw new Error('Failed to update post');
   }
 }
 
