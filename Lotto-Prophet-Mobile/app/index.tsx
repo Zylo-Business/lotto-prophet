@@ -397,8 +397,8 @@ function DashboardView({
             <View style={[s.quickActionIcon, { backgroundColor: a.bg }]}>
               <Ionicons name={a.icon} size={18} color={a.color} />
             </View>
-            <Text style={[s.quickActionLabel, { color: C.text }]}>{a.label}</Text>
-            <Ionicons name="chevron-forward" size={16} color={C.textSecondary} style={{ marginLeft: 'auto' }} />
+            <Text style={[s.quickActionLabel, { color: C.text, flex: 1 }]}>{a.label}</Text>
+            <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
           </Pressable>
         ))}
       </Animated.View>
