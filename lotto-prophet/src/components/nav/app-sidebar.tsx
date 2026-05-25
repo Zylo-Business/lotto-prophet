@@ -136,10 +136,24 @@ function SidebarIcon({
           <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
         </svg>
       );
+    case "menu":
+      return (
+        <svg className={cn} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+        </svg>
+      );
     default:
       return <span className={cn}>•</span>;
   }
 }
+
+// Bottom tab bar items (mobile / tablet)
+const BOTTOM_TAB_ITEMS = [
+  { label: "Home",      href: "/dashboard",  icon: "home"   },
+  { label: "Draws",     href: "/draws",       icon: "ticket" },
+  { label: "Community", href: "/community",   icon: "chat"   },
+  { label: "Shop",      href: "/buy-chart",   icon: "cart"   },
+];
 
 export function AppSidebar() {
   const pathname = usePathname();
@@ -194,17 +208,6 @@ export function AppSidebar() {
 
   return (
     <>
-      {/* Mobile hamburger button */}
-      <button
-        onClick={() => setMobileOpen(true)}
-        className="fixed top-4 left-4 z-50 lg:hidden bg-sidebar p-2 rounded-lg border border-sidebar-border shadow-sm"
-        aria-label="Open menu"
-      >
-        <svg className="w-5 h-5 text-sidebar-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
-      </button>
-
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
@@ -519,6 +522,41 @@ export function AppSidebar() {
           )}
         </div>
       </aside>
+
+      {/* ── Bottom tab bar — mobile & tablet only ──────────────────── */}
+      <nav className="fixed bottom-0 left-0 right-0 z-50 lg:hidden bg-sidebar border-t border-sidebar-border flex items-stretch h-16">
+        {BOTTOM_TAB_ITEMS.map((item) => {
+          const isActive =
+            pathname === item.href ||
+            (item.href !== "/dashboard" && pathname.startsWith(item.href));
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`relative flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors
+                ${isActive
+                  ? "text-indigo-600 dark:text-indigo-400"
+                  : "text-sidebar-foreground/60 hover:text-sidebar-foreground"
+                }`}
+            >
+              {isActive && (
+                <span className="absolute top-0 inset-x-3 h-0.5 rounded-full bg-indigo-600 dark:bg-indigo-400" />
+              )}
+              <SidebarIcon name={item.icon} className="w-5 h-5" />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+
+        {/* More — opens the full hamburger drawer */}
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="flex-1 flex flex-col items-center justify-center gap-0.5 text-[10px] font-medium text-sidebar-foreground/60 hover:text-sidebar-foreground transition-colors"
+        >
+          <SidebarIcon name="menu" className="w-5 h-5" />
+          <span>More</span>
+        </button>
+      </nav>
     </>
   );
 }

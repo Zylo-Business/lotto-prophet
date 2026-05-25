@@ -32,7 +32,7 @@ export default function RootLayout({
         <ThemeProvider>
           <div className="flex h-screen overflow-hidden">
             <AppSidebar />
-            <main className="flex-1 overflow-auto">{children}</main>
+            <main className="flex-1 overflow-auto pb-16 lg:pb-0">{children}</main>
           </div>
         </ThemeProvider>
       </body>

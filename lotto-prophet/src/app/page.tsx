@@ -1,214 +1,338 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { useEffect, useRef } from "react";
 
-type User = {
-  id: number;
-  firstname: string;
-  surname: string;
-  email: string;
-};
-
-export default function Home() {
-  const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
+function DigitRain() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    const stored = localStorage.getItem("user");
-    if (!token) { router.replace("/signin"); return; }
-    if (stored) {
-      try { setUser(JSON.parse(stored)); } catch { router.replace("/signin"); }
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const FONT_SIZE = 15;
+    const DIGITS = "0123456789";
+    const STREAM_COUNT = 45;
+
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+
+    interface Stream {
+      x: number;
+      head: number;
+      length: number;
+      speed: number;
+      chars: string[];
+      brightness: number;
     }
-  }, [router]);
+
+    const makeStream = (forcedX?: number): Stream => ({
+      x: forcedX ?? Math.floor(Math.random() * Math.floor(width / FONT_SIZE)) * FONT_SIZE,
+      head: Math.floor(Math.random() * -(height / FONT_SIZE)),
+      length: Math.floor(Math.random() * 16 + 8),
+      speed: Math.random() * 0.5 + 0.25,
+      chars: [],
+      brightness: Math.random() * 0.25 + 0.10,
+    });
+
+    const streams: Stream[] = Array.from({ length: STREAM_COUNT }, (_, i) =>
+      makeStream(Math.floor((i / STREAM_COUNT) * width))
+    );
+
+    let frame = 0;
+    let animId: number;
+
+    const draw = () => {
+      ctx.clearRect(0, 0, width, height);
+      ctx.font = `bold ${FONT_SIZE}px monospace`;
+
+      for (const stream of streams) {
+        if (frame % Math.max(1, Math.ceil(1 / stream.speed)) === 0) {
+          stream.chars.unshift(DIGITS[Math.floor(Math.random() * DIGITS.length)]);
+          if (stream.chars.length > stream.length) stream.chars.pop();
+          stream.head++;
+        }
+
+        for (let idx = 0; idx < stream.chars.length; idx++) {
+          const y = (stream.head - idx) * FONT_SIZE;
+          if (y < -FONT_SIZE || y > height + FONT_SIZE) continue;
+          const fade = (1 - idx / stream.length) * stream.brightness;
+          ctx.fillStyle = `rgba(99,102,241,${fade.toFixed(3)})`;
+          ctx.fillText(stream.chars[idx], stream.x, y);
+        }
+
+        if (stream.head * FONT_SIZE > height + stream.length * FONT_SIZE) {
+          Object.assign(stream, makeStream());
+        }
+      }
+
+      frame++;
+      animId = requestAnimationFrame(draw);
+    };
+
+    animId = requestAnimationFrame(draw);
+
+    const onResize = () => {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelAnimationFrame(animId);
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6 md:p-8">
+    <canvas
+      ref={canvasRef}
+      className="fixed inset-0 pointer-events-none"
+      style={{ zIndex: 0 }}
+    />
+  );
+}
 
-      {/* Greeting */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          Welcome back{user?.firstname ? `, ${user.firstname}` : ""} 👋
+const FEATURES = [
+  {
+    gradient: "from-indigo-500 to-purple-600",
+    icon: (
+      <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+      </svg>
+    ),
+    title: "Expert Predictions",
+    desc: "Free and premium picks curated daily for every major game.",
+  },
+  {
+    gradient: "from-emerald-500 to-teal-500",
+    icon: (
+      <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+      </svg>
+    ),
+    title: "Lapping Analysis",
+    desc: "Detect repeating number patterns across consecutive draws.",
+  },
+  {
+    gradient: "from-amber-500 to-orange-500",
+    icon: (
+      <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+      </svg>
+    ),
+    title: "Full Draw History",
+    desc: "Thousands of draws across NLA, Alpha, Rush and more.",
+  },
+  {
+    gradient: "from-purple-500 to-pink-500",
+    icon: (
+      <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422M12 14v7" />
+      </svg>
+    ),
+    title: "Lotto University",
+    desc: "Courses on foundations, lapping strategies and game theory.",
+  },
+  {
+    gradient: "from-rose-500 to-red-500",
+    icon: (
+      <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h6m-4 8a9 9 0 100-18 9 9 0 000 18z" />
+      </svg>
+    ),
+    title: "Community",
+    desc: "Share forecasts and strategies with players nationwide.",
+  },
+  {
+    gradient: "from-sky-500 to-blue-500",
+    icon: (
+      <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+      </svg>
+    ),
+    title: "Draw Alerts",
+    desc: "Instant notifications when new predictions are published.",
+  },
+];
+
+
+export default function LandingPage() {
+  return (
+    <>
+      {/* ── Digit rain background ────────────────────────────────── */}
+      <DigitRain />
+
+      <div className="min-h-screen flex flex-col relative" style={{ zIndex: 1 }}>
+
+      {/* ── Nav ─────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-50 bg-white/80 dark:bg-[#0a0a14]/80 backdrop-blur-xl border-b border-gray-100 dark:border-white/5">
+        <div className="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between">
+          <Link href="/" className="flex items-center gap-2.5">
+            <Image src="/logo.jpeg" alt="Lotto Prophet" width={32} height={32} className="rounded-xl" />
+            <span className="font-bold text-base bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent hidden sm:block">
+              Lotto Prophet
+            </span>
+          </Link>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <Link href="/signin"
+              className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
+              Sign in
+            </Link>
+            <Link href="/signup"
+              className="px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:opacity-90 transition-opacity shadow-lg shadow-indigo-500/25">
+              Get started
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {/* ── Hero ────────────────────────────────────────────────── */}
+      <section className="relative flex flex-col items-center text-center px-5 pt-20 pb-24 overflow-hidden">
+        {/* Background */}
+        <div className="absolute inset-0 bg-gradient-to-b from-indigo-50/60 via-white/80 to-white/70 dark:from-indigo-950/40 dark:via-[#0a0a14]/80 dark:to-[#0a0a14]/75 -z-10" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-gradient-to-b from-indigo-400/20 to-transparent dark:from-indigo-600/15 rounded-full blur-3xl -z-10 pointer-events-none" />
+
+        {/* Badge */}
+        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-indigo-200 dark:border-indigo-700/50 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-semibold mb-8">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          Live predictions · Updated daily
+        </div>
+
+        {/* Headline */}
+        <h1 className="text-5xl sm:text-6xl md:text-7xl font-black tracking-tight leading-[1.05] max-w-3xl">
+          <span className="text-gray-900 dark:text-white">Play smarter.</span>
+          <br />
+          <span className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent">
+            Win smarter.
+          </span>
         </h1>
-        <p className="text-gray-400 dark:text-gray-500 mt-1 text-sm">Here&apos;s your Lotto Prophet dashboard</p>
-      </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {/* Predictions Made */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Predictions Made</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white mt-2">0</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Total predictions</p>
-          </div>
-          <div className="w-11 h-11 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
-            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
-              <circle cx="12" cy="12" r="9" stroke="#a855f7" strokeWidth="1.8"/>
-              <path d="M8 12.5l2.5 2.5 5-5" stroke="#a855f7" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M12 3v1M12 20v1M3 12h1M20 12h1" stroke="#a855f7" strokeWidth="1.5" strokeLinecap="round"/>
+        <p className="mt-6 text-lg text-gray-500 dark:text-gray-400 max-w-lg leading-relaxed">
+          Expert picks, pattern analysis, and full draw history — built for Ghana&apos;s serious lottery players.
+        </p>
+
+        {/* CTA */}
+        <div className="mt-9 flex flex-col items-center gap-2">
+          <Link href="/signup"
+            className="px-10 py-4 rounded-2xl font-bold text-sm bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:opacity-90 active:scale-[0.98] transition-all shadow-xl shadow-indigo-500/30 flex items-center gap-2">
+            Start for free — it&apos;s instant
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
             </svg>
-          </div>
+          </Link>
+          <p className="text-xs text-gray-400 dark:text-gray-600">
+            Already have an account?{" "}
+            <Link href="/signin" className="text-indigo-500 hover:text-indigo-600 font-medium transition-colors">Sign in</Link>
+          </p>
         </div>
 
-        {/* Win Rate */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Win Rate</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white mt-2">—</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">No data yet</p>
-          </div>
-          <div className="w-11 h-11 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
-            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
-              <path d="M3 17l4-8 4 5 3-3 4 6" stroke="#6366f1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-              <rect x="3" y="3" width="4" height="4" rx="0.8" fill="#6366f1" opacity="0.3"/>
-              <rect x="10" y="3" width="4" height="4" rx="0.8" fill="#6366f1" opacity="0.3"/>
-            </svg>
-          </div>
-        </div>
+      </section>
 
-        {/* Draws Tracked */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Draws Tracked</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white mt-2">0</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Lotto draws followed</p>
-          </div>
-          <div className="w-11 h-11 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
-            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none">
-              <rect x="3" y="3" width="7" height="7" rx="1.5" stroke="#8b5cf6" strokeWidth="1.8"/>
-              <rect x="14" y="3" width="7" height="7" rx="1.5" stroke="#8b5cf6" strokeWidth="1.8"/>
-              <rect x="3" y="14" width="7" height="7" rx="1.5" stroke="#8b5cf6" strokeWidth="1.8"/>
-              <rect x="14" y="14" width="7" height="7" rx="1.5" stroke="#8b5cf6" strokeWidth="1.8"/>
-            </svg>
-          </div>
-        </div>
-
-        {/* Subscription */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Subscription</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white mt-2">Free</p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Current plan</p>
-          </div>
-          <div className="w-11 h-11 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
-            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="#f59e0b">
-              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-            </svg>
-          </div>
-        </div>
-      </div>
-
-      {/* Middle row: Recent Activity + Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        {/* Recent Activity */}
-        <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6">
-          <h2 className="text-base font-semibold text-gray-900 dark:text-white">Recent Activity</h2>
-          <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5 mb-8">Your latest predictions and results</p>
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="w-14 h-14 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mb-4">
-              <svg className="w-7 h-7 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-              </svg>
+      {/* ── Stats ───────────────────────────────────────────────── */}
+      <section className="border-y border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-white/[0.02]">
+        <div className="max-w-4xl mx-auto px-5 py-8 grid grid-cols-2 sm:grid-cols-4 gap-px bg-gray-100 dark:bg-white/5">
+          {[
+            { v: "10K+", l: "Active players" },
+            { v: "5",    l: "Game types"    },
+            { v: "Daily",l: "Expert picks"  },
+            { v: "Free", l: "To join"       },
+          ].map((s) => (
+            <div key={s.l} className="bg-gray-50 dark:bg-[#0a0a14] px-6 py-5 text-center">
+              <p className="text-2xl font-black bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">{s.v}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">{s.l}</p>
             </div>
-            <p className="text-gray-500 dark:text-gray-400 font-medium">No activity yet</p>
-            <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
-              Start making predictions to see your{" "}
-              <Link href="/draws" className="text-indigo-500 hover:underline">history here</Link>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Features ────────────────────────────────────────────── */}
+      <section className="py-20 px-5">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-14">
+            <p className="text-xs font-semibold uppercase tracking-widest text-indigo-500 dark:text-indigo-400 mb-3">Features</p>
+            <h2 className="text-3xl sm:text-4xl font-black text-gray-900 dark:text-white">
+              Everything in one place
+            </h2>
+            <p className="mt-3 text-gray-500 dark:text-gray-400 max-w-md mx-auto text-sm">
+              Built for serious players across Ghana&apos;s major lottery games.
             </p>
           </div>
-        </div>
 
-        {/* Quick Actions */}
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 flex flex-col">
-          <h2 className="text-base font-semibold text-gray-900 dark:text-white">Quick Actions</h2>
-          <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5 mb-6">Get started with Lotto Prophet</p>
-          <div className="flex flex-col gap-1 flex-1">
-            <Link href="/predictions" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
-                <svg className="w-4 h-4 text-purple-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                </svg>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {FEATURES.map((f) => (
+              <div key={f.title}
+                className="group p-6 rounded-2xl border border-gray-100 dark:border-white/5 bg-white dark:bg-white/[0.02] hover:border-indigo-200 dark:hover:border-indigo-700/40 hover:shadow-lg hover:shadow-indigo-500/5 hover:-translate-y-0.5 transition-all duration-200">
+                <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${f.gradient} flex items-center justify-center mb-4 shadow-md`}>
+                  {f.icon}
+                </div>
+                <h3 className="font-bold text-gray-900 dark:text-white mb-1.5">{f.title}</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{f.desc}</p>
               </div>
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">New Prediction</span>
-            </Link>
-
-            <Link href="/draws" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center shrink-0">
-                <svg className="w-4 h-4 text-indigo-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-                </svg>
-              </div>
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">View Statistics</span>
-            </Link>
-
-            <Link href="/draws" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
-                <svg className="w-4 h-4 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
-                </svg>
-              </div>
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">Set Draw Alerts</span>
-            </Link>
-
-            <Link href="/university" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors group">
-              <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
-                <svg className="w-4 h-4 text-amber-500" viewBox="0 0 24 24" fill="#f59e0b">
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                </svg>
-              </div>
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">Upgrade Plan</span>
-            </Link>
+            ))}
           </div>
-          <p className="text-xs text-gray-400 dark:text-gray-500 text-right mt-4">Features coming soon</p>
         </div>
-      </div>
+      </section>
 
-      {/* Analysis Tools */}
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Analysis Tools</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Link href="/tools/lapping-2">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-5 hover:shadow-md transition-shadow cursor-pointer group">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center shrink-0">
-                  <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">Lapping 2</p>
-                  <p className="text-xs text-gray-400">2-row pattern analysis</p>
-                </div>
-              </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Scan 2 consecutive rows per column to find overlapping patterns in draw history.
-              </p>
-            </div>
-          </Link>
+      {/* ── CTA ─────────────────────────────────────────────────── */}
+      <section className="py-20 px-5">
+        <div className="max-w-3xl mx-auto">
+          <div className="relative rounded-3xl bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 p-px shadow-2xl shadow-indigo-500/30">
+            <div className="relative rounded-[23px] bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 px-8 py-14 text-center overflow-hidden">
+              {/* Inner glow */}
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(255,255,255,0.15)_0%,_transparent_60%)] pointer-events-none" />
+              <div className="absolute inset-0 opacity-10 pointer-events-none"
+                style={{ backgroundImage: "radial-gradient(circle, #fff 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
 
-          <Link href="/tools/lapping-3">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-5 hover:shadow-md transition-shadow cursor-pointer group">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
-                  <svg className="w-5 h-5 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">Lapping 3</p>
-                  <p className="text-xs text-gray-400">3-row pattern analysis</p>
-                </div>
-              </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Scan 3 consecutive rows per column with pre-filled default patterns for deeper analysis.
+              <p className="text-4xl mb-4">🎯</p>
+              <h2 className="text-2xl sm:text-4xl font-black text-white mb-3">
+                Ready to win smarter?
+              </h2>
+              <p className="text-indigo-100 mb-8 max-w-sm mx-auto text-sm leading-relaxed">
+                Join thousands of players using data and patterns to make better picks every single day.
               </p>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <Link href="/signup"
+                  className="w-full sm:w-auto px-8 py-3.5 rounded-2xl font-bold text-sm bg-white text-indigo-700 hover:bg-indigo-50 active:scale-[0.98] transition-all shadow-lg flex items-center justify-center gap-2">
+                  Get started for free
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                  </svg>
+                </Link>
+                <Link href="/signin"
+                  className="w-full sm:w-auto px-8 py-3.5 rounded-2xl font-semibold text-sm border-2 border-white/30 text-white hover:bg-white/10 active:scale-[0.98] transition-all flex items-center justify-center">
+                  Sign in
+                </Link>
+              </div>
             </div>
-          </Link>
+          </div>
         </div>
+      </section>
+
+      {/* ── Footer ──────────────────────────────────────────────── */}
+      <footer className="mt-auto border-t border-gray-100 dark:border-white/5 py-7 px-5">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-400 dark:text-gray-600">
+          <div className="flex items-center gap-2">
+            <Image src="/logo.jpeg" alt="" width={24} height={24} className="rounded-lg opacity-70" />
+            <span>© {new Date().getFullYear()} Lotto Prophet</span>
+          </div>
+          <div className="flex items-center gap-5">
+            <Link href="/signin"  className="hover:text-indigo-500 transition-colors">Sign in</Link>
+            <Link href="/signup"  className="hover:text-indigo-500 transition-colors">Sign up</Link>
+            <Link href="/contact" className="hover:text-indigo-500 transition-colors">Contact</Link>
+          </div>
+        </div>
+      </footer>
       </div>
-    </div>
+    </>
   );
 }
