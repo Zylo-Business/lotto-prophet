@@ -38,7 +38,7 @@ function DigitRain() {
       length: Math.floor(Math.random() * 16 + 8),
       speed: Math.random() * 0.5 + 0.25,
       chars: [],
-      brightness: Math.random() * 0.13 + 0.04,
+      brightness: Math.random() * 0.25 + 0.10,
     });
 
     const streams: Stream[] = Array.from({ length: STREAM_COUNT }, (_, i) =>
@@ -167,10 +167,11 @@ const FEATURES = [
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-white dark:bg-[#0a0a14] flex flex-col">
-
+    <>
       {/* ── Digit rain background ────────────────────────────────── */}
       <DigitRain />
+
+      <div className="min-h-screen flex flex-col relative" style={{ zIndex: 1 }}>
 
       {/* ── Nav ─────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 bg-white/80 dark:bg-[#0a0a14]/80 backdrop-blur-xl border-b border-gray-100 dark:border-white/5">
@@ -198,7 +199,7 @@ export default function LandingPage() {
       {/* ── Hero ────────────────────────────────────────────────── */}
       <section className="relative flex flex-col items-center text-center px-5 pt-20 pb-24 overflow-hidden">
         {/* Background */}
-        <div className="absolute inset-0 bg-gradient-to-b from-indigo-50/80 via-white to-white dark:from-indigo-950/30 dark:via-[#0a0a14] dark:to-[#0a0a14] -z-10" />
+        <div className="absolute inset-0 bg-gradient-to-b from-indigo-50/60 via-white/80 to-white/70 dark:from-indigo-950/40 dark:via-[#0a0a14]/80 dark:to-[#0a0a14]/75 -z-10" />
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-gradient-to-b from-indigo-400/20 to-transparent dark:from-indigo-600/15 rounded-full blur-3xl -z-10 pointer-events-none" />
 
         {/* Badge */}
@@ -331,6 +332,7 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
-    </div>
+      </div>
+    </>
   );
 }
