@@ -3,6 +3,103 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useEffect, useRef } from "react";
+
+function DigitRain() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const FONT_SIZE = 15;
+    const DIGITS = "0123456789";
+    const STREAM_COUNT = 45;
+
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+
+    interface Stream {
+      x: number;
+      head: number;
+      length: number;
+      speed: number;
+      chars: string[];
+      brightness: number;
+    }
+
+    const makeStream = (forcedX?: number): Stream => ({
+      x: forcedX ?? Math.floor(Math.random() * Math.floor(width / FONT_SIZE)) * FONT_SIZE,
+      head: Math.floor(Math.random() * -(height / FONT_SIZE)),
+      length: Math.floor(Math.random() * 16 + 8),
+      speed: Math.random() * 0.5 + 0.25,
+      chars: [],
+      brightness: Math.random() * 0.13 + 0.04,
+    });
+
+    const streams: Stream[] = Array.from({ length: STREAM_COUNT }, (_, i) =>
+      makeStream(Math.floor((i / STREAM_COUNT) * width))
+    );
+
+    let frame = 0;
+    let animId: number;
+
+    const draw = () => {
+      ctx.clearRect(0, 0, width, height);
+      ctx.font = `bold ${FONT_SIZE}px monospace`;
+
+      for (const stream of streams) {
+        if (frame % Math.max(1, Math.ceil(1 / stream.speed)) === 0) {
+          stream.chars.unshift(DIGITS[Math.floor(Math.random() * DIGITS.length)]);
+          if (stream.chars.length > stream.length) stream.chars.pop();
+          stream.head++;
+        }
+
+        for (let idx = 0; idx < stream.chars.length; idx++) {
+          const y = (stream.head - idx) * FONT_SIZE;
+          if (y < -FONT_SIZE || y > height + FONT_SIZE) continue;
+          const fade = (1 - idx / stream.length) * stream.brightness;
+          ctx.fillStyle = `rgba(99,102,241,${fade.toFixed(3)})`;
+          ctx.fillText(stream.chars[idx], stream.x, y);
+        }
+
+        if (stream.head * FONT_SIZE > height + stream.length * FONT_SIZE) {
+          Object.assign(stream, makeStream());
+        }
+      }
+
+      frame++;
+      animId = requestAnimationFrame(draw);
+    };
+
+    animId = requestAnimationFrame(draw);
+
+    const onResize = () => {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
+    };
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelAnimationFrame(animId);
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="fixed inset-0 pointer-events-none"
+      style={{ zIndex: 0 }}
+    />
+  );
+}
 
 const FEATURES = [
   {
@@ -68,54 +165,12 @@ const FEATURES = [
 ];
 
 
-const LOTTERY_BALLS = [
-  { n: 7,  color: "from-indigo-500 to-purple-600", size: 56, top: "6%",  left: "3%",  opacity: 0.10, dur: 22, delay: 0  },
-  { n: 14, color: "from-emerald-500 to-teal-500",  size: 42, top: "14%", left: "91%", opacity: 0.08, dur: 27, delay: 3  },
-  { n: 23, color: "from-amber-500 to-orange-500",  size: 66, top: "33%", left: "87%", opacity: 0.07, dur: 19, delay: 6  },
-  { n: 38, color: "from-rose-500 to-red-500",      size: 50, top: "58%", left: "4%",  opacity: 0.09, dur: 24, delay: 2  },
-  { n: 45, color: "from-sky-500 to-blue-500",      size: 74, top: "74%", left: "89%", opacity: 0.06, dur: 30, delay: 8  },
-  { n: 12, color: "from-purple-500 to-pink-500",   size: 38, top: "82%", left: "48%", opacity: 0.08, dur: 16, delay: 1  },
-  { n: 31, color: "from-indigo-400 to-violet-500", size: 54, top: "22%", left: "18%", opacity: 0.07, dur: 25, delay: 5  },
-  { n: 6,  color: "from-teal-500 to-cyan-500",     size: 36, top: "88%", left: "28%", opacity: 0.10, dur: 20, delay: 4  },
-  { n: 49, color: "from-amber-400 to-yellow-500",  size: 62, top: "9%",  left: "63%", opacity: 0.07, dur: 28, delay: 7  },
-  { n: 27, color: "from-red-500 to-rose-600",      size: 44, top: "68%", left: "68%", opacity: 0.08, dur: 23, delay: 9  },
-  { n: 3,  color: "from-violet-500 to-indigo-600", size: 70, top: "44%", left: "12%", opacity: 0.06, dur: 32, delay: 11 },
-  { n: 88, color: "from-emerald-400 to-green-500", size: 40, top: "92%", left: "75%", opacity: 0.09, dur: 18, delay: 13 },
-];
-
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-white dark:bg-[#0a0a14] flex flex-col">
 
-      {/* ── Lottery ball background animation ───────────────────── */}
-      <style>{`
-        @keyframes floatBall {
-          0%,100% { transform: translateY(0px) rotate(0deg) scale(1); }
-          25%      { transform: translateY(-28px) rotate(6deg) scale(1.03); }
-          50%      { transform: translateY(-18px) rotate(-4deg) scale(0.97); }
-          75%      { transform: translateY(-36px) rotate(3deg) scale(1.02); }
-        }
-      `}</style>
-      <div className="fixed inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 0 }}>
-        {LOTTERY_BALLS.map((b) => (
-          <div
-            key={b.n}
-            className={`absolute rounded-full bg-gradient-to-br ${b.color} flex items-center justify-center text-white font-black select-none`}
-            style={{
-              width: b.size,
-              height: b.size,
-              fontSize: b.size * 0.28,
-              top: b.top,
-              left: b.left,
-              opacity: b.opacity,
-              animation: `floatBall ${b.dur}s ease-in-out ${b.delay}s infinite`,
-              boxShadow: `0 4px 24px rgba(99,102,241,0.25)`,
-            }}
-          >
-            {b.n}
-          </div>
-        ))}
-      </div>
+      {/* ── Digit rain background ────────────────────────────────── */}
+      <DigitRain />
 
       {/* ── Nav ─────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 bg-white/80 dark:bg-[#0a0a14]/80 backdrop-blur-xl border-b border-gray-100 dark:border-white/5">
