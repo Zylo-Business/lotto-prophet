@@ -1,6 +1,7 @@
 import axios, { AxiosError } from 'axios';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { getToken } from './authStorage';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -66,6 +67,12 @@ const api = axios.create({
   baseURL: `${BASE_URL}/api/draws`,
   headers: { 'Content-Type': 'application/json' },
   timeout: 20_000,
+});
+
+api.interceptors.request.use(async (config) => {
+  const token = await getToken();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
 });
 
 /** Extract a readable error message from an Axios error */

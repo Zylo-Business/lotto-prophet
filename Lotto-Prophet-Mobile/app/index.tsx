@@ -106,7 +106,7 @@ export default function Index() {
                 </View>
                 <View style={styles.userTextContainer}>
                   <Text style={styles.welcomeBack}>Welcome back!</Text>
-                  <Text style={styles.userEmail}>{user?.name || user?.email || 'User'}</Text>
+                  <Text style={styles.userEmail}>{user ? `${user.firstname} ${user.surname}`.trim() || user.email : 'User'}</Text>
                 </View>
               </View>
               

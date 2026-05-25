@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import { useAuth } from './context/AuthContext';
 import { useTheme, type AppColors } from './context/ThemeContext';
 import {
   fetchDrawSources,
@@ -13,6 +14,7 @@ import {
 } from './lib/draws';
 
 export default function Dashboard() {
+  const { loading: authLoading } = useAuth();
   const { colors: COLORS, isDark } = useTheme();
   const styles = useMemo(() => createStyles(COLORS), [COLORS]);
   const [loading, setLoading] = useState(true);
@@ -21,8 +23,8 @@ export default function Dashboard() {
   const router = useRouter();
 
   useEffect(() => {
-    loadSources();
-  }, []);
+    if (!authLoading) loadSources();
+  }, [authLoading]);
 
   const loadSources = async () => {
     try {
