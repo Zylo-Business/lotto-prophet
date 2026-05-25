@@ -179,9 +179,16 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6 md:p-8">
-      {/* Header */}
-      <div className="mb-8 mt-10 md:mt-14 lg:mt-0">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Mobile top bar */}
+      <div className="lg:hidden sticky top-0 z-30 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 h-14 flex items-center justify-between">
+        <span className="font-bold text-indigo-600 dark:text-indigo-400 text-base">Lotto Prophet</span>
+        <span className="text-xs text-gray-400 dark:text-gray-500">Dashboard</span>
+      </div>
+
+      <div className="p-6 md:p-8">
+        {/* Header */}
+        <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
           Welcome back, {user?.firstname ?? "…"} 👋
         </h1>
@@ -359,5 +366,6 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
+  </div>
   );
 }
