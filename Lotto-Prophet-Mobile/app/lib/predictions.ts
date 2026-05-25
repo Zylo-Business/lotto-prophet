@@ -1,6 +1,7 @@
 import axios, { AxiosError } from 'axios';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { getToken } from './authStorage';
 
 export type PublicPrediction = {
   id: number;
@@ -43,10 +44,17 @@ function extractError(err: unknown, fallback: string): string {
   return fallback;
 }
 
-export async function fetchPredictions(token: string): Promise<PublicPrediction[]> {
+async function authHeader(): Promise<{ Authorization: string }> {
+  const token = await getToken();
+  if (!token) throw new Error('Not authenticated. Please sign in.');
+  return { Authorization: `Bearer ${token}` };
+}
+
+export async function fetchPredictions(): Promise<PublicPrediction[]> {
   try {
+    const headers = await authHeader();
     const { data } = await axios.get<PublicPrediction[]>(`${BASE_URL}/api/predictions`, {
-      headers: { Authorization: `Bearer ${token}` },
+      headers,
       timeout: 20_000,
     });
     return data;
@@ -55,12 +63,13 @@ export async function fetchPredictions(token: string): Promise<PublicPrediction[
   }
 }
 
-export async function purchasePrediction(token: string, id: number): Promise<PublicPrediction> {
+export async function purchasePrediction(id: number): Promise<PublicPrediction> {
   try {
+    const headers = await authHeader();
     const { data } = await axios.post<PublicPrediction>(
       `${BASE_URL}/api/predictions/${id}/purchase`,
       {},
-      { headers: { Authorization: `Bearer ${token}` }, timeout: 20_000 },
+      { headers, timeout: 20_000 },
     );
     return data;
   } catch (err) {

@@ -118,7 +118,7 @@ function PredictionCard({
 }
 
 export default function PredictionsScreen() {
-  const { token } = useAuth();
+  const { loading: authLoading } = useAuth();
   const { colors: COLORS } = useTheme();
   const styles2 = useMemo(() => createStyles(COLORS), [COLORS]);
 
@@ -129,26 +129,27 @@ export default function PredictionsScreen() {
   const [paying, setPaying] = useState<number | null>(null);
 
   const load = useCallback(async (silent = false) => {
-    if (!token) return;
     if (!silent) setLoading(true);
     setError(null);
     try {
-      setPredictions(await fetchPredictions(token));
+      setPredictions(await fetchPredictions());
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [token]);
+  }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!authLoading) load();
+  }, [authLoading, load]);
 
   async function handlePay(pred: PublicPrediction) {
-    if (!token || paying) return;
+    if (paying) return;
     setPaying(pred.id);
     try {
-      const unlocked = await purchasePrediction(token, pred.id);
+      const unlocked = await purchasePrediction(pred.id);
       setPredictions(prev => prev.map(p => p.id === unlocked.id ? unlocked : p));
     } catch {
       // payment handled externally; silently fail
