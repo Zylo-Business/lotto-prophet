@@ -225,6 +225,7 @@ function AppDrawer() {
         headerStyle: { backgroundColor: colors.background },
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: '600' },
+        headerTitle: () => null,
         drawerStyle: { backgroundColor: colors.card, width: 280 },
         drawerActiveBackgroundColor: `${colors.primary}15`,
         drawerActiveTintColor: colors.primary,
