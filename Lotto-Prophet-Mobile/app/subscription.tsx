@@ -146,10 +146,6 @@ export default function SubscriptionScreen() {
           <View style={styles.crownContainer}>
             <Ionicons name="diamond" size={48} color={GOLD} />
           </View>
-          <Text style={styles.headerTitle}>Unlock Premium</Text>
-          <Text style={styles.headerSubtitle}>
-            Get access to AI-powered predictions and increase your chances of winning
-          </Text>
         </Animated.View>
 
         {/* Plans */}

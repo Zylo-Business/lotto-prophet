@@ -264,10 +264,6 @@ export default function Lapping2() {
           <View style={styles.iconContainer}>
             <Ionicons name="git-compare" size={40} color={COLORS.primary} />
           </View>
-          <Text style={styles.headerTitle}>Lapping 2 Analysis</Text>
-          <Text style={styles.headerSubtitle}>
-            Detect identical values in the same column across 2 consecutive draws
-          </Text>
         </Animated.View>
 
         {/* ── Controls ── */}

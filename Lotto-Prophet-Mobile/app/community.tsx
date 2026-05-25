@@ -1027,7 +1027,6 @@ export default function CommunityPage() {
     <View style={[styles.container, { backgroundColor: COLORS.background }]}>
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: COLORS.border }]}>
-        <Text style={[styles.headerTitle, { color: COLORS.text }]}>Community</Text>
         <Pressable
           style={[styles.newPostBtn, { backgroundColor: COLORS.primary }]}
           onPress={() => setComposerOpen(true)}

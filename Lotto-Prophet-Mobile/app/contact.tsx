@@ -23,10 +23,7 @@ export default function Contact() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Animated.View entering={FadeInUp.duration(500)} style={styles.header}>
-        <Text style={styles.headerTitle}>Contact Us</Text>
-        <Text style={styles.headerSubtitle}>We'd love to hear from you</Text>
-      </Animated.View>
+
 
       {/* Contact Options */}
       <Animated.View entering={FadeInDown.delay(100).duration(400)} style={styles.optionsCard}>

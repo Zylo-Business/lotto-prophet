@@ -97,12 +97,7 @@ export default function Dashboard() {
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={
-          <Animated.View entering={FadeInUp.duration(500)} style={styles.header}>
-            <Text style={styles.headerTitle}>Draws</Text>
-            <Text style={styles.headerSubtitle}>Select a draw to view results</Text>
-          </Animated.View>
-        }
+        ListHeaderComponent={null}
         ListFooterComponent={
           <Animated.View entering={FadeInDown.delay(300).duration(500)} style={styles.toolsSection}>
             <Text style={styles.toolsSectionTitle}>Tools</Text>

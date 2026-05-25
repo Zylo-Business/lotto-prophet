@@ -110,10 +110,7 @@ export default function Settings() {
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={styles.content}>
-      <Animated.View entering={FadeInUp.duration(500)} style={styles.header}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
-        <Text style={{ fontSize: 16, color: colors.textSecondary, marginTop: 4 }}>Customize your experience</Text>
-      </Animated.View>
+
 
       {/* Account info card */}
       {user && (

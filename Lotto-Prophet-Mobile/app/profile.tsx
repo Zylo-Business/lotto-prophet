@@ -16,11 +16,6 @@ export default function Profile() {
 
   return (
     <View style={styles.container}>
-      <Animated.View entering={FadeInUp.duration(500)} style={styles.header}>
-        <Text style={styles.headerTitle}>Profile</Text>
-        <Text style={styles.headerSubtitle}>Manage your account</Text>
-      </Animated.View>
-
       <Animated.View entering={FadeInDown.delay(100).duration(400)} style={styles.tabContainer}>
         <Pressable
           style={[styles.tab, activeTab === 'information' && styles.tabActive]}

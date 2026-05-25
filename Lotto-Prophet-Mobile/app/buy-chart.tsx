@@ -24,10 +24,6 @@ export default function BuyChart() {
         <View style={styles.headerIconWrap}>
           <Ionicons name="analytics" size={36} color="#fff" />
         </View>
-        <Text style={styles.headerTitle}>Buy My Chart</Text>
-        <Text style={styles.headerSubtitle}>
-          Get the professionally crafted Excel prediction chart packed with winning patterns and analysis.
-        </Text>
       </Animated.View>
 
       {/* What's Included */}

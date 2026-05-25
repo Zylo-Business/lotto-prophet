@@ -288,10 +288,6 @@ export default function Lapping3() {
           <View style={styles.iconContainer}>
             <Ionicons name="git-network" size={40} color={ACCENT} />
           </View>
-          <Text style={styles.headerTitle}>Lapping 3 Analysis</Text>
-          <Text style={styles.headerSubtitle}>
-            Scan 3 consecutive rows per column for pattern matches
-          </Text>
         </Animated.View>
 
         {/* ── Controls ── */}

@@ -238,12 +238,7 @@ export default function PredictionsScreen() {
           tintColor={COLORS.primary}
         />
       }
-      ListHeaderComponent={
-        <Animated.View entering={FadeInDown.duration(400)} style={s.header}>
-          <Text style={s.headerTitle}>Predictions</Text>
-          <Text style={s.headerSub}>Admin predictions and recommended numbers</Text>
-        </Animated.View>
-      }
+      ListHeaderComponent={null}
       ListEmptyComponent={
         <View style={s.empty}>
           <Ionicons name="document-text-outline" size={48} color={COLORS.textSecondary} />

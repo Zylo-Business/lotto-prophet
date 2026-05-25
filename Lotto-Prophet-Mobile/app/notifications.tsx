@@ -61,10 +61,7 @@ export default function Notifications() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Animated.View entering={FadeInUp.duration(500)} style={styles.header}>
-        <Text style={styles.headerTitle}>Notifications</Text>
-        <Text style={styles.headerSubtitle}>Manage your alert preferences</Text>
-      </Animated.View>
+
 
       {/* Summary pill */}
       <Animated.View entering={FadeInDown.delay(80).duration(400)} style={styles.summaryRow}>

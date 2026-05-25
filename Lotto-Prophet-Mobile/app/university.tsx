@@ -123,12 +123,7 @@ export default function University() {
 
   return (
     <View style={styles.container}>
-      <Animated.View entering={FadeInUp.duration(500)} style={styles.header}>
-        <Text style={styles.headerTitle}>🏫 University</Text>
-        <Text style={styles.headerSubtitle}>
-          Learn lottery analysis from Foundation to Game Theory with AI
-        </Text>
-      </Animated.View>
+
 
       <FlatList
         data={levels}
