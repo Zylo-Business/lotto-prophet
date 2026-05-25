@@ -67,6 +67,12 @@ function CustomDrawerContent(props: any) {
           labelStyle={[styles.drawerLabel, { color: colors.text }]}
         />
         <DrawerItem
+          label="Predictions"
+          icon={({ size }) => <Ionicons name="analytics" size={size} color={colors.primary} />}
+          onPress={() => props.navigation.navigate('predictions')}
+          labelStyle={[styles.drawerLabel, { color: colors.text }]}
+        />
+        <DrawerItem
           label="Community"
           icon={({ size }) => <Ionicons name="people" size={size} color={colors.primary} />}
           onPress={() => props.navigation.navigate('community')}
@@ -243,6 +249,7 @@ function AppDrawer() {
       <Drawer.Screen name="lesson-detail" options={{ title: 'Lesson', drawerItemStyle: { display: 'none' } }} />
       <Drawer.Screen name="lapping-2" options={{ title: 'Lapping 2' }} />
       <Drawer.Screen name="lapping-3" options={{ title: 'Lapping 3' }} />
+      <Drawer.Screen name="predictions" options={{ title: 'Predictions' }} />
       <Drawer.Screen name="community" options={{ title: 'Community' }} />
     </Drawer>
   );

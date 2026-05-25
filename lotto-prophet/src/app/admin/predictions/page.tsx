@@ -15,10 +15,16 @@ const GAME_OPTIONS = [
   "express monday", "express tuesday", "express wednesday", "express friday", "express saturday", "express sunday", "express excel",
 ];
 
-type NumRow = [string, string, string, string, string];
-const emptyRow = (): NumRow => ["", "", "", "", ""];
+const MIN_NUMS = 2;
+const MAX_NUMS = 10;
 
 const numCls = "w-12 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-1.5 py-1.5 text-sm text-center text-gray-900 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 tabular-nums";
+
+function parseNumList(json: string | null | undefined): string[] {
+  if (!json) return ["", ""];
+  try { const arr = JSON.parse(json); return Array.isArray(arr) && arr.length >= MIN_NUMS ? arr.map(String) : ["", ""]; }
+  catch { return ["", ""]; }
+}
 
 function PredictionForm({
   initial, onSave, onCancel, saving,
@@ -31,29 +37,28 @@ function PredictionForm({
   const [title, setTitle] = useState(initial?.title ?? "");
   const [gameName, setGameName] = useState(initial?.game_name ?? GAME_OPTIONS[0]);
   const [drawDate, setDrawDate] = useState(initial?.draw_date?.slice(0, 10) ?? "");
-  const [nums, setNums] = useState<NumRow>(() => {
-    if (!initial?.numbers) return emptyRow();
-    try { const arr = JSON.parse(initial.numbers); return arr.map(String) as NumRow; }
-    catch { return emptyRow(); }
-  });
+  const [nums, setNums] = useState<string[]>(() => parseNumList(initial?.numbers));
   const [hasMachine, setHasMachine] = useState(!!initial?.machine_numbers);
-  const [mNums, setMNums] = useState<NumRow>(() => {
-    if (!initial?.machine_numbers) return emptyRow();
-    try { const arr = JSON.parse(initial.machine_numbers); return arr.map(String) as NumRow; }
-    catch { return emptyRow(); }
-  });
+  const [mNums, setMNums] = useState<string[]>(() => parseNumList(initial?.machine_numbers));
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [isPublished, setIsPublished] = useState(initial ? initial.is_published === 1 : true);
   const [predType, setPredType] = useState<"free" | "paid">(initial?.prediction_type ?? "free");
   const [price, setPrice] = useState(initial?.price ? String(initial.price) : "");
 
-  const setNum = (arr: NumRow, setArr: (v: NumRow) => void, i: number, v: string) => {
-    const next = [...arr] as NumRow; next[i] = v; setArr(next);
+  const setNum = (arr: string[], setArr: (v: string[]) => void, i: number, v: string) => {
+    const next = [...arr]; next[i] = v; setArr(next);
+  };
+  const addNum = (arr: string[], setArr: (v: string[]) => void) => {
+    if (arr.length < MAX_NUMS) setArr([...arr, ""]);
+  };
+  const removeNum = (arr: string[], setArr: (v: string[]) => void, i: number) => {
+    if (arr.length > MIN_NUMS) setArr(arr.filter((_, idx) => idx !== i));
   };
 
-  const canSave = title.trim() && gameName && drawDate && nums.every(v => v.trim() !== "") &&
-    (!hasMachine || mNums.every(v => v.trim() !== "")) &&
-    (predType === "free" || (price.trim() !== "" && parseFloat(price) > 0));
+  const numsValid = nums.length >= MIN_NUMS && nums.length <= MAX_NUMS && nums.every(v => v.trim() !== "");
+  const mNumsValid = !hasMachine || (mNums.length >= MIN_NUMS && mNums.length <= MAX_NUMS && mNums.every(v => v.trim() !== ""));
+  const canSave = !!(title.trim() && gameName && drawDate && numsValid && mNumsValid &&
+    (predType === "free" || (price.trim() !== "" && parseFloat(price) > 0)));
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -121,11 +126,25 @@ function PredictionForm({
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Predicted Numbers (N1–N5)</label>
-        <div className="flex gap-2">
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs font-medium text-gray-500 dark:text-gray-400">
+            Predicted Numbers ({nums.length}/{MAX_NUMS})
+          </label>
+          {nums.length < MAX_NUMS && (
+            <button type="button" onClick={() => addNum(nums, setNums)}
+              className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">+ Add number</button>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
           {nums.map((v, i) => (
-            <input key={i} type="number" className={numCls} min={1} max={90} value={v}
-              onChange={e => setNum(nums, setNums, i, e.target.value)} placeholder={`N${i + 1}`} />
+            <div key={i} className="flex items-center gap-1">
+              <input type="number" className={numCls} min={1} max={90} value={v}
+                onChange={e => setNum(nums, setNums, i, e.target.value)} placeholder={`N${i + 1}`} />
+              {nums.length > 1 && (
+                <button type="button" onClick={() => removeNum(nums, setNums, i)}
+                  className="text-gray-400 hover:text-red-500 transition-colors text-xs leading-none">✕</button>
+              )}
+            </div>
           ))}
         </div>
       </div>
@@ -133,14 +152,26 @@ function PredictionForm({
       <div>
         <label className="flex items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 cursor-pointer">
           <input type="checkbox" className="h-3.5 w-3.5 accent-amber-500" checked={hasMachine} onChange={e => setHasMachine(e.target.checked)} />
-          Machine Numbers (M1–M5)
+          Machine Numbers ({hasMachine ? `${mNums.length}/${MAX_NUMS}` : `0/${MAX_NUMS}`})
         </label>
         {hasMachine && (
-          <div className="flex gap-2">
-            {mNums.map((v, i) => (
-              <input key={i} type="number" className={`${numCls} border-amber-400 dark:border-amber-600`} min={1} max={90} value={v}
-                onChange={e => setNum(mNums, setMNums, i, e.target.value)} placeholder={`M${i + 1}`} />
-            ))}
+          <div>
+            {mNums.length < MAX_NUMS && (
+              <button type="button" onClick={() => addNum(mNums, setMNums)}
+                className="text-xs text-amber-600 dark:text-amber-400 hover:underline mb-1 block">+ Add number</button>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {mNums.map((v, i) => (
+                <div key={i} className="flex items-center gap-1">
+                  <input type="number" className={`${numCls} border-amber-400 dark:border-amber-600`} min={1} max={90} value={v}
+                    onChange={e => setNum(mNums, setMNums, i, e.target.value)} placeholder={`M${i + 1}`} />
+                  {mNums.length > 1 && (
+                    <button type="button" onClick={() => removeNum(mNums, setMNums, i)}
+                      className="text-gray-400 hover:text-red-500 transition-colors text-xs leading-none">✕</button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

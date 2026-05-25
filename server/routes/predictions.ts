@@ -39,10 +39,13 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
     const result = rows.map((p: any) => {
       const isPaid = p.prediction_type === 'paid';
       const unlocked = !isPaid || purchasedIds.has(p.id);
+      let numbers_count = 5;
+      try { numbers_count = JSON.parse(p.numbers || '[]').length || 5; } catch {}
       return {
         ...p,
         is_unlocked: unlocked,
         numbers: unlocked ? p.numbers : null,
+        numbers_count,
         machine_numbers: unlocked ? p.machine_numbers : null,
       };
     });

@@ -6,6 +6,7 @@ export type PublicPrediction = {
   game_name: string;
   draw_date: string;
   numbers: string | null;
+  numbers_count: number;
   machine_numbers: string | null;
   notes: string | null;
   prediction_type: "free" | "paid";

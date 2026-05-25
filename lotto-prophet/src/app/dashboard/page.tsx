@@ -281,8 +281,8 @@ export default function DashboardPage() {
                       )}
                     </div>
                     {locked ? (
-                      <div className="flex items-center gap-2 mt-1">
-                        {[1, 2, 3, 4, 5].map(i => (
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {Array.from({ length: p.numbers_count ?? 5 }, (_, i) => (
                           <span key={i} className="inline-flex w-8 h-8 items-center justify-center rounded-full bg-gray-200 dark:bg-gray-600 text-gray-400 dark:text-gray-500 text-xs font-bold select-none">?</span>
                         ))}
                         <p className="text-xs text-amber-600 dark:text-amber-400 ml-1">Pay GHS {Number(p.price).toFixed(2)} to unlock</p>
