@@ -241,50 +241,52 @@ function DashboardView({
   onPay: (p: PublicPrediction) => void;
 }) {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
 
   const plan = (user as any)?.subscription_plan ?? 'free';
   const planLabel = plan.charAt(0).toUpperCase() + plan.slice(1);
 
   const statCards = [
-    { label: 'Predictions Made', value: String(predictions.length), sub: 'Admin predictions available', icon: 'analytics' as const,   color: '#6366F1' },
-    { label: 'Win Rate',         value: '—',                        sub: 'No data yet',                  icon: 'bar-chart'  as const,   color: '#10B981' },
-    { label: 'Draws Tracked',    value: '0',                        sub: 'Lotto draws followed',          icon: 'ticket'     as const,   color: '#8B5CF6' },
-    { label: 'Subscription',     value: planLabel,                  sub: 'Current plan',                  icon: 'star'       as const,   color: '#F59E0B' },
+    { label: 'Predictions Made', value: String(predictions.length), sub: 'Admin predictions available', icon: 'analytics'     as const, color: '#6366F1', isPlan: false },
+    { label: 'Win Rate',         value: '—',                        sub: 'No data yet',                  icon: 'bar-chart'    as const, color: '#10B981', isPlan: false },
+    { label: 'Draws Tracked',    value: '0',                        sub: 'Lotto draws followed',          icon: 'radio-button-on' as const, color: '#8B5CF6', isPlan: false },
+    { label: 'Subscription',     value: planLabel,                  sub: 'Current plan',                  icon: 'star'         as const, color: '#F59E0B', isPlan: true  },
   ];
 
   return (
-    <ScrollView style={[s.root, { backgroundColor: C.background }]} contentContainerStyle={s.dashScroll} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={[s.root, { backgroundColor: C.background }]}
+      contentContainerStyle={s.dashScroll}
+      showsVerticalScrollIndicator={false}
+    >
       {/* Welcome header */}
       <Animated.View entering={FadeInDown.duration(400)} style={s.dashHeader}>
-        <View style={{ flex: 1 }}>
-          <Text style={[s.welcomeHeading, { color: C.text }]}>
-            Welcome back, {user ? `${(user as any).firstname}` : 'Player'} 👋
-          </Text>
-          <Text style={[s.welcomeSub, { color: C.textSecondary }]}>Here's your Lotto Prophet dashboard</Text>
-        </View>
+        <Text style={[s.welcomeHeading, { color: C.text }]}>
+          Welcome back, {user ? `${(user as any).firstname}` : 'Player'} 👋
+        </Text>
+        <Text style={[s.welcomeSub, { color: C.textSecondary }]}>Here's your Lotto Prophet dashboard</Text>
       </Animated.View>
 
-      {/* Stat cards */}
-      <Animated.View entering={FadeInDown.delay(80).duration(400)} style={s.statRow}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.statRowScroll}>
-          {statCards.map((sc) => (
-            <View key={sc.label} style={[s.statCard, { backgroundColor: C.card, borderColor: C.border }]}>
-              <View style={[s.statCardIcon, { backgroundColor: `${sc.color}15` }]}>
-                <Ionicons name={sc.icon} size={20} color={sc.color} />
-              </View>
+      {/* Stat cards — 2×2 grid */}
+      <Animated.View entering={FadeInDown.delay(80).duration(400)} style={s.statGrid}>
+        {statCards.map((sc) => (
+          <View key={sc.label} style={[s.statCard, { backgroundColor: C.card, borderColor: C.border }]}>
+            <View style={s.statCardTop}>
               <Text style={[s.statCardLabel, { color: C.textSecondary }]}>{sc.label}</Text>
-              {sc.label === 'Subscription' ? (
-                <View style={[s.planBadge, { backgroundColor: `${sc.color}20` }]}>
-                  <Text style={[s.planBadgeText, { color: sc.color }]}>{sc.value}</Text>
-                </View>
-              ) : (
-                <Text style={[s.statCardValue, { color: C.text }]}>{sc.value}</Text>
-              )}
-              <Text style={[s.statCardSub, { color: C.textSecondary }]}>{sc.sub}</Text>
+              <View style={[s.statCardIconBox, { backgroundColor: `${sc.color}15` }]}>
+                <Ionicons name={sc.icon} size={18} color={sc.color} />
+              </View>
             </View>
-          ))}
-        </ScrollView>
+            {sc.isPlan ? (
+              <View style={[s.planBadge, { backgroundColor: `${sc.color}20` }]}>
+                <Text style={[s.planBadgeText, { color: sc.color }]}>{sc.value}</Text>
+              </View>
+            ) : (
+              <Text style={[s.statCardValue, { color: C.text }]}>{sc.value}</Text>
+            )}
+            <Text style={[s.statCardSub, { color: sc.color }]}>{sc.sub}</Text>
+          </View>
+        ))}
       </Animated.View>
 
       {/* Latest Predictions */}
@@ -292,96 +294,91 @@ function DashboardView({
         <Text style={[s.panelTitle, { color: C.text }]}>Latest Predictions</Text>
         <Text style={[s.panelSub, { color: C.textSecondary }]}>Admin predictions and recommended numbers</Text>
 
-        {predLoading ? (
-          <View style={s.predLoading}>
-            <ActivityIndicator size="small" color={C.primary} />
-          </View>
-        ) : predictions.length === 0 ? (
-          <View style={s.predEmpty}>
-            <Ionicons name="document-text-outline" size={40} color={C.textSecondary} />
-            <Text style={[s.predEmptyText, { color: C.textSecondary }]}>No predictions yet</Text>
-          </View>
-        ) : (
-          predictions.slice(0, 5).map((p) => {
-            const locked = !p.is_unlocked;
-            let nums: number[] = [];
-            let mNums: number[] = [];
-            if (!locked) {
-              try { if (p.numbers) nums = JSON.parse(p.numbers); } catch {}
-              try { if (p.machine_numbers) mNums = JSON.parse(p.machine_numbers); } catch {}
-            }
-            return (
-              <View
-                key={p.id}
-                style={[
-                  s.predCard,
-                  locked
-                    ? { backgroundColor: '#FFFBEB', borderColor: '#F59E0B40' }
-                    : { backgroundColor: C.background, borderColor: C.border },
-                ]}
-              >
-                <View style={s.predCardHeader}>
-                  <View style={{ flex: 1 }}>
-                    <View style={s.predTitleRow}>
-                      <Text style={[s.predTitle, { color: C.text }]} numberOfLines={1}>{p.title}</Text>
-                      {p.prediction_type === 'paid' && (
-                        <View style={[s.predBadge, { backgroundColor: locked ? '#FEF3C7' : '#D1FAE5' }]}>
-                          <Text style={[s.predBadgeText, { color: locked ? '#B45309' : '#065F46' }]}>
-                            {locked ? `GHS ${Number(p.price).toFixed(2)}` : 'Unlocked'}
-                          </Text>
-                        </View>
-                      )}
+        <ScrollView style={s.predScroll} showsVerticalScrollIndicator nestedScrollEnabled>
+          {predLoading ? (
+            <View style={s.predLoading}>
+              <ActivityIndicator size="small" color={C.primary} />
+            </View>
+          ) : predictions.length === 0 ? (
+            <View style={s.predEmpty}>
+              <Ionicons name="document-text-outline" size={40} color={C.textSecondary} />
+              <Text style={[s.predEmptyText, { color: C.textSecondary }]}>No predictions yet</Text>
+            </View>
+          ) : (
+            predictions.map((p) => {
+              const locked = !p.is_unlocked;
+              let nums: number[] = [];
+              let mNums: number[] = [];
+              if (!locked) {
+                try { if (p.numbers) nums = JSON.parse(p.numbers); } catch {}
+                try { if (p.machine_numbers) mNums = JSON.parse(p.machine_numbers); } catch {}
+              }
+              return (
+                <View
+                  key={p.id}
+                  style={[
+                    s.predCard,
+                    locked
+                      ? { backgroundColor: '#FFFBEB', borderColor: '#F59E0B40' }
+                      : { backgroundColor: C.background, borderColor: C.border },
+                  ]}
+                >
+                  <View style={s.predCardHeader}>
+                    <View style={{ flex: 1 }}>
+                      <View style={s.predTitleRow}>
+                        <Text style={[s.predTitle, { color: C.text }]} numberOfLines={1}>{p.title}</Text>
+                        {p.prediction_type === 'paid' && (
+                          <View style={[s.predBadge, { backgroundColor: locked ? '#FEF3C7' : '#D1FAE5' }]}>
+                            <Text style={[s.predBadgeText, { color: locked ? '#B45309' : '#065F46' }]}>
+                              {locked ? `GHS ${Number(p.price).toFixed(2)}` : 'Unlocked'}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={[s.predMeta, { color: C.textSecondary }]}>{p.game_name} · {p.draw_date?.slice(0, 10)}</Text>
                     </View>
-                    <Text style={[s.predMeta, { color: C.textSecondary }]}>{p.game_name} · {p.draw_date?.slice(0, 10)}</Text>
+                    {locked && p.prediction_type === 'paid' && (
+                      <Pressable
+                        style={({ pressed }) => [s.payBtn, pressed && { opacity: 0.75 }]}
+                        onPress={() => onPay(p)}
+                        disabled={paying === p.id}
+                      >
+                        {paying === p.id
+                          ? <ActivityIndicator size="small" color="#fff" />
+                          : (
+                            <>
+                              <Ionicons name="lock-closed" size={11} color="#fff" />
+                              <Text style={s.payBtnText}>Click to Pay</Text>
+                            </>
+                          )}
+                      </Pressable>
+                    )}
+                  </View>
+
+                  <View style={s.ballsRow}>
+                    {locked
+                      ? Array.from({ length: p.numbers_count ?? 5 }, (_, i) => (
+                          <NumberBall key={i} n="?" type="N" s={s} C={C} />
+                        ))
+                      : nums.map((n, i) => <NumberBall key={i} n={n} type="N" s={s} C={C} />)}
+                    {!locked && mNums.length > 0 && (
+                      <>
+                        <Text style={[s.separator, { color: C.textSecondary }]}>|</Text>
+                        {mNums.map((n, i) => <NumberBall key={i} n={n} type="M" s={s} C={C} />)}
+                      </>
+                    )}
                   </View>
                   {locked && p.prediction_type === 'paid' && (
-                    <Pressable
-                      style={({ pressed }) => [s.payBtn, pressed && { opacity: 0.75 }]}
-                      onPress={() => onPay(p)}
-                      disabled={paying === p.id}
-                    >
-                      {paying === p.id
-                        ? <ActivityIndicator size="small" color="#fff" />
-                        : (
-                          <>
-                            <Ionicons name="lock-closed" size={11} color="#fff" />
-                            <Text style={s.payBtnText}>Click to Pay</Text>
-                          </>
-                        )}
-                    </Pressable>
+                    <Text style={s.lockHint}>Pay GHS {Number(p.price).toFixed(2)} to unlock</Text>
+                  )}
+                  {p.notes && !locked && (
+                    <Text style={[s.predNotes, { color: C.textSecondary }]}>{p.notes}</Text>
                   )}
                 </View>
-
-                <View style={s.ballsRow}>
-                  {locked
-                    ? Array.from({ length: p.numbers_count ?? 5 }, (_, i) => (
-                        <NumberBall key={i} n="?" type="N" s={s} C={C} />
-                      ))
-                    : nums.map((n, i) => <NumberBall key={i} n={n} type="N" s={s} C={C} />)}
-                  {!locked && mNums.length > 0 && (
-                    <>
-                      <Text style={[s.separator, { color: C.textSecondary }]}>|</Text>
-                      {mNums.map((n, i) => <NumberBall key={i} n={n} type="M" s={s} C={C} />)}
-                    </>
-                  )}
-                </View>
-                {locked && p.prediction_type === 'paid' && (
-                  <Text style={s.lockHint}>Pay GHS {Number(p.price).toFixed(2)} to unlock</Text>
-                )}
-                {p.notes && !locked && (
-                  <Text style={[s.predNotes, { color: C.textSecondary }]}>{p.notes}</Text>
-                )}
-              </View>
-            );
-          })
-        )}
-
-        {predictions.length > 5 && (
-          <Pressable onPress={() => router.push('/predictions')} style={s.viewAllBtn}>
-            <Text style={[s.viewAllText, { color: C.primary }]}>View all predictions</Text>
-            <Ionicons name="chevron-forward" size={14} color={C.primary} />
-          </Pressable>
-        )}
+              );
+            })
+          )}
+        </ScrollView>
       </Animated.View>
 
       {/* Quick Actions */}
@@ -401,11 +398,12 @@ function DashboardView({
             <Ionicons name="chevron-forward" size={16} color={C.textSecondary} />
           </Pressable>
         ))}
+        <Text style={[s.featuresSoon, { color: C.textSecondary }]}>Features coming soon</Text>
       </Animated.View>
 
       {/* Analysis Tools */}
       <Animated.View entering={FadeInDown.delay(320).duration(400)} style={s.toolsSection}>
-        <Text style={[s.panelTitle, { color: C.text }]}>Analysis Tools</Text>
+        <Text style={[s.panelTitle, { color: C.text, marginBottom: 12 }]}>Analysis Tools</Text>
         <View style={s.toolsRow}>
           <Pressable
             style={[s.toolCard, { backgroundColor: C.card, borderColor: C.border }]}
@@ -582,24 +580,28 @@ const createStyles = (C: AppColors) => StyleSheet.create({
   // ── Dashboard ────────────────────────────────────────────────────────────────
   dashScroll: { paddingBottom: 40 },
   dashHeader: {
-    flexDirection: 'row', alignItems: 'flex-start',
-    paddingHorizontal: 20, paddingTop: 24, paddingBottom: 20,
+    paddingHorizontal: 16, paddingTop: 20, paddingBottom: 16,
   },
   welcomeHeading: { fontSize: 26, fontWeight: '800', lineHeight: 32 },
   welcomeSub: { fontSize: 14, marginTop: 4 },
 
-  statRow: { marginBottom: 4 },
-  statRowScroll: { paddingHorizontal: 16, gap: 12, paddingBottom: 16 },
+  // 2×2 stat grid
+  statGrid: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    paddingHorizontal: 16, gap: 12, marginBottom: 4,
+  },
   statCard: {
-    width: 150, borderRadius: 16, borderWidth: 1, padding: 16,
+    width: (SCREEN_W - 44) / 2,
+    borderRadius: 16, borderWidth: 1, padding: 16,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
   },
-  statCardIcon: { width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  statCardLabel: { fontSize: 12, marginBottom: 6 },
-  statCardValue: { fontSize: 28, fontWeight: '800', marginBottom: 4 },
-  statCardSub: { fontSize: 11 },
-  planBadge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 99, marginBottom: 4 },
-  planBadgeText: { fontSize: 13, fontWeight: '700' },
+  statCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  statCardIconBox: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  statCardLabel: { fontSize: 12, flex: 1, paddingRight: 4 },
+  statCardValue: { fontSize: 30, fontWeight: '800', marginBottom: 4 },
+  statCardSub: { fontSize: 11, marginTop: 2 },
+  planBadge: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 99, marginBottom: 4 },
+  planBadgeText: { fontSize: 14, fontWeight: '700' },
 
   panel: {
     marginHorizontal: 16, marginBottom: 16,
@@ -607,15 +609,14 @@ const createStyles = (C: AppColors) => StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
   },
   panelTitle: { fontSize: 16, fontWeight: '700', marginBottom: 2 },
-  panelSub: { fontSize: 13, marginBottom: 16 },
+  panelSub: { fontSize: 13, marginBottom: 12 },
 
+  predScroll: { maxHeight: 280 },
   predLoading: { paddingVertical: 24, alignItems: 'center' },
   predEmpty: { paddingVertical: 32, alignItems: 'center', gap: 8 },
   predEmptyText: { fontSize: 14, fontWeight: '500' },
 
-  predCard: {
-    borderRadius: 12, borderWidth: 1, padding: 14, marginBottom: 10,
-  },
+  predCard: { borderRadius: 12, borderWidth: 1, padding: 14, marginBottom: 10 },
   predCardHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, gap: 8 },
   predTitleRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 2 },
   predTitle: { fontSize: 14, fontWeight: '600', flexShrink: 1 },
@@ -625,7 +626,7 @@ const createStyles = (C: AppColors) => StyleSheet.create({
   payBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: '#F59E0B', paddingHorizontal: 10, paddingVertical: 7,
-    borderRadius: 10, minWidth: 90, justifyContent: 'center',
+    borderRadius: 10, minWidth: 100, justifyContent: 'center',
   },
   payBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   ballsRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 },
@@ -635,21 +636,16 @@ const createStyles = (C: AppColors) => StyleSheet.create({
   lockHint: { marginTop: 8, fontSize: 11, color: '#B45309', fontStyle: 'italic' },
   predNotes: { marginTop: 6, fontSize: 11, fontStyle: 'italic' },
 
-  viewAllBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingTop: 12, gap: 4,
-  },
-  viewAllText: { fontSize: 14, fontWeight: '600' },
-
   quickAction: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingVertical: 12, borderRadius: 10,
   },
   quickActionIcon: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
   quickActionLabel: { fontSize: 14, fontWeight: '500' },
+  featuresSoon: { fontSize: 12, textAlign: 'right', marginTop: 8 },
 
   toolsSection: { paddingHorizontal: 16, marginBottom: 16 },
-  toolsRow: { flexDirection: 'row', gap: 12, marginTop: 12 },
+  toolsRow: { flexDirection: 'row', gap: 12 },
   toolCard: {
     flex: 1, borderRadius: 16, borderWidth: 1, padding: 16,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
