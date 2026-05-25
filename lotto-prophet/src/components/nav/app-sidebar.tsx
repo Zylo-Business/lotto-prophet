@@ -152,7 +152,7 @@ const BOTTOM_TAB_ITEMS = [
   { label: "Home",      href: "/dashboard",  icon: "home"   },
   { label: "Draws",     href: "/draws",       icon: "ticket" },
   { label: "Community", href: "/community",   icon: "chat"   },
-  { label: "University",href: "/university",  icon: "school" },
+  { label: "Shop",      href: "/buy-chart",   icon: "cart"   },
 ];
 
 export function AppSidebar() {
