@@ -10,11 +10,13 @@ import toolsRoutes from './routes/tools.js';
 import communityRoutes from './routes/community.js';
 import aiPredictRoutes from './routes/ai-predict.js';
 import predictionsRoutes from './routes/predictions.js';
+import healthRoutes from './routes/health.js';
 import morgan from 'morgan';
 import cors from 'cors';
 import { setupSyncCron } from './utils/schedule-sync.js';
 import { syncGoogleDrive } from './utils/sync-google-drive.js';
 import { apiLimiter } from './middlewares/rate-limit.js';
+
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -38,7 +40,10 @@ app.use('/api/community', communityRoutes);
 app.use('/api/ai-predict', aiPredictRoutes);
 app.use('/api/predictions', predictionsRoutes);
 
+app.use('/api', healthRoutes);
+
 app.get('/', (req: Request, res: Response) => {
+
   res.send('Welcome to the Lotto Prophet API!');
 });
  
