@@ -46,6 +46,8 @@ export type AdminUser = {
   country_code: string;
   mobile_number: string;
   created_at: string;
+  subscription_plan: string;
+  subscription_expires_at: string | null;
 };
 
 export type AdminGroup = {
@@ -111,6 +113,35 @@ export type AdminPushToken = {
   created_at: string;
 };
 
+export type AdminDrawCreate = {
+  source: string;
+  event_number: number;
+  date: string;
+  n_numbers: number[];
+  m_numbers?: number[];
+};
+
+export type AdminEnrollment = {
+  id: number;
+  course_id: number;
+  user_id: number;
+  firstname: string;
+  surname: string;
+  email: string;
+  enrolled_at: string;
+  status: string;
+};
+
+export type AdminLessonMedia = {
+  id: number;
+  lesson_id: number;
+  media_type: 'video' | 'file';
+  title: string;
+  url: string;
+  sort_order: number;
+  created_at: string;
+};
+
 // ─── Stats ────────────────────────────────────────────────────────────────────
 
 export async function fetchAdminStats(token: string): Promise<AdminStats> {
@@ -124,7 +155,7 @@ export async function fetchAdminStats(token: string): Promise<AdminStats> {
 
 // ─── Draws ────────────────────────────────────────────────────────────────────
 
-export async function fetchAdminDraws(token: string, params: { source?: string; limit?: number; offset?: number } = {}) {
+export async function fetchAdminDraws(token: string, params: { sources?: string; limit?: number; offset?: number } = {}) {
   try {
     const { data } = await makeApi(token).get('/draws/all', { params });
     return data as { total: number; limit: number; offset: number; draws: AdminDraw[] };
@@ -139,6 +170,103 @@ export async function deleteAdminDraw(token: string, id: number) {
     return data;
   } catch (err) {
     throw new Error(extractError(err, 'Failed to delete draw'));
+  }
+}
+
+export async function addAdminDraw(token: string, body: AdminDrawCreate) {
+  try {
+    const { data } = await makeApi(token).post('/draws', body);
+    return data;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to add draw'));
+  }
+}
+
+export async function updateAdminDraw(token: string, id: number, body: Partial<AdminDrawCreate>) {
+  try {
+    const { data } = await makeApi(token).put(`/draws/${id}`, body);
+    return data;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to update draw'));
+  }
+}
+
+// ─── Predictions ─────────────────────────────────────────────────────────────
+
+export type AdminPrediction = {
+  id: number;
+  title: string;
+  game_name: string;
+  draw_date: string;
+  numbers: string;
+  machine_numbers: string | null;
+  notes: string | null;
+  is_published: number;
+  prediction_type: "free" | "paid";
+  price: number;
+  created_by: number | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminPredictionInput = {
+  title: string;
+  game_name: string;
+  draw_date: string;
+  numbers: number[];
+  machine_numbers?: number[] | null;
+  notes?: string;
+  is_published?: boolean;
+  prediction_type?: "free" | "paid";
+  price?: number;
+};
+
+export async function fetchAdminPredictions(token: string) {
+  try {
+    const { data } = await makeApi(token).get('/predictions');
+    return data as AdminPrediction[];
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to fetch predictions'));
+  }
+}
+
+export async function createAdminPrediction(token: string, body: AdminPredictionInput) {
+  try {
+    const { data } = await makeApi(token).post('/predictions', body);
+    return data as AdminPrediction;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to create prediction'));
+  }
+}
+
+export async function updateAdminPrediction(token: string, id: number, body: AdminPredictionInput) {
+  try {
+    const { data } = await makeApi(token).put(`/predictions/${id}`, body);
+    return data as AdminPrediction;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to update prediction'));
+  }
+}
+
+export async function deleteAdminPrediction(token: string, id: number) {
+  try {
+    const { data } = await makeApi(token).delete(`/predictions/${id}`);
+    return data;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to delete prediction'));
+  }
+}
+
+export async function updateUserSubscription(token: string, userId: number, plan: string, expires_at?: string) {
+  try {
+    const { data } = await makeApi(token).put(`/users/${userId}/subscription`, {
+      subscription_plan: plan,
+      subscription_expires_at: expires_at || null,
+    });
+    return data;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to update subscription'));
   }
 }
 
@@ -271,6 +399,91 @@ export async function deleteAdminLesson(token: string, id: number) {
     return data;
   } catch (err) {
     throw new Error(extractError(err, 'Failed to delete lesson'));
+  }
+}
+
+// ─── University — Enrollments ─────────────────────────────────────────────────
+
+export async function fetchAdminEnrollments(token: string, courseId: number): Promise<AdminEnrollment[]> {
+  try {
+    const { data } = await makeApi(token).get(`/university/courses/${courseId}/enrollments`);
+    return data;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to fetch enrollments'));
+  }
+}
+
+export async function enrollUser(token: string, courseId: number, params: { user_id?: number; email?: string }) {
+  try {
+    const { data } = await makeApi(token).post(`/university/courses/${courseId}/enrollments`, params);
+    return data as AdminEnrollment;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to enroll user'));
+  }
+}
+
+export async function unenrollUser(token: string, enrollmentId: number) {
+  try {
+    const { data } = await makeApi(token).delete(`/university/enrollments/${enrollmentId}`);
+    return data;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to unenroll user'));
+  }
+}
+
+// ─── University — Lesson Media ────────────────────────────────────────────────
+
+export async function fetchLessonMedia(token: string, lessonId: number): Promise<AdminLessonMedia[]> {
+  try {
+    const { data } = await makeApi(token).get(`/university/lessons/${lessonId}/media`);
+    return data;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to fetch lesson media'));
+  }
+}
+
+export async function addLessonMedia(
+  token: string,
+  lessonId: number,
+  mediaData: { title: string; media_type: string; url?: string; file?: File },
+) {
+  try {
+    const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    if (mediaData.file) {
+      const form = new FormData();
+      form.append('title', mediaData.title);
+      form.append('media_type', mediaData.media_type);
+      if (mediaData.url) form.append('url', mediaData.url);
+      form.append('file', mediaData.file);
+      const res = await fetch(`${BASE_URL}/api/admin/university/lessons/${lessonId}/media`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any).error || 'Failed to add lesson media');
+      }
+      return (await res.json()) as AdminLessonMedia;
+    } else {
+      const { data } = await makeApi(token).post(`/university/lessons/${lessonId}/media`, {
+        title: mediaData.title,
+        media_type: mediaData.media_type,
+        url: mediaData.url,
+      });
+      return data as AdminLessonMedia;
+    }
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to add lesson media'));
+  }
+}
+
+export async function deleteLessonMedia(token: string, mediaId: number) {
+  try {
+    const { data } = await makeApi(token).delete(`/university/media/${mediaId}`);
+    return data;
+  } catch (err) {
+    throw new Error(extractError(err, 'Failed to delete lesson media'));
   }
 }
 

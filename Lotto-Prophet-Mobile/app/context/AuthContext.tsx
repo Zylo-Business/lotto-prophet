@@ -2,7 +2,8 @@ import { useRouter } from 'expo-router';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as authApi from '../lib/auth';
 import type { User, RegisterData, ProfileUpdateData } from '../lib/auth';
-import { deleteToken, getToken, saveToken } from '../lib/authStorage';
+export { type User };
+import { deleteToken, getToken, saveToken, saveRefreshToken, getRefreshToken, deleteRefreshToken } from '../lib/authStorage';
 
 type AuthContextValue = {
   user: User | null;
@@ -13,6 +14,7 @@ type AuthContextValue = {
   forgotPassword: (email: string) => Promise<string>;
   logout: () => Promise<void>;
   updateUser: (data: ProfileUpdateData) => Promise<void>;
+  updateAvatar: (imageUri: string, mimeType?: string) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 };
 
@@ -25,18 +27,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    // On mount, try to restore token and current user
     (async () => {
       try {
-        const t = await getToken();
+        let t = await getToken();
         if (t) {
-          const currentUser = await authApi.getCurrentUser(t);
-          setToken(t);
-          setUser(currentUser);
+          try {
+            const currentUser = await authApi.getCurrentUser(t);
+            setToken(t);
+            setUser(currentUser);
+          } catch {
+            // Access token may be expired — try refreshing
+            const rt = await getRefreshToken();
+            if (rt) {
+              try {
+                const refreshed = await authApi.refreshAccessToken(rt);
+                await saveToken(refreshed.token);
+                await saveRefreshToken(refreshed.refresh_token);
+                const currentUser = await authApi.getCurrentUser(refreshed.token);
+                setToken(refreshed.token);
+                setUser(currentUser);
+              } catch {
+                await deleteToken();
+                await deleteRefreshToken();
+                setToken(null);
+                setUser(null);
+              }
+            } else {
+              await deleteToken();
+              setToken(null);
+              setUser(null);
+            }
+          }
         }
       } catch (e) {
         console.warn('Failed to restore session', e);
         await deleteToken();
+        await deleteRefreshToken();
         setToken(null);
         setUser(null);
       } finally {
@@ -51,6 +77,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const resp = await authApi.login(identifier, password);
       if (resp.token) {
         await saveToken(resp.token);
+        if (resp.refresh_token) await saveRefreshToken(resp.refresh_token);
         setToken(resp.token);
         setUser(resp.user ?? null);
         router.replace('/dashboard');
@@ -97,6 +124,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(updated);
   }
 
+  async function updateAvatar(imageUri: string, mimeType?: string) {
+    if (!token) throw new Error('Not authenticated');
+    const updated = await authApi.uploadAvatar(token, imageUri, mimeType);
+    setUser(updated);
+  }
+
   async function changePassword(currentPassword: string, newPassword: string) {
     if (!token) throw new Error('Not authenticated');
     await authApi.changePassword(token, currentPassword, newPassword);
@@ -105,7 +138,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function logout() {
     setLoading(true);
     try {
+      const rt = await getRefreshToken();
+      if (rt) await authApi.serverLogout(rt);
       await deleteToken();
+      await deleteRefreshToken();
       setToken(null);
       setUser(null);
       router.replace('/');
@@ -117,7 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, forgotPassword, logout, updateUser, changePassword }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, forgotPassword, logout, updateUser, updateAvatar, changePassword }}>
       {children}
     </AuthContext.Provider>
   );

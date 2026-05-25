@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import React, { useState, useMemo, useEffect } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View, ActivityIndicator } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View, ActivityIndicator } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useTheme, type AppColors } from './context/ThemeContext';
 import { useAuth } from './context/AuthContext';
+import { getBaseUrl } from './lib/auth';
 
 type TabType = 'information' | 'password';
 
@@ -46,8 +48,9 @@ export default function Profile() {
 function ProfileInfo() {
   const { colors: COLORS } = useTheme();
   const styles = useMemo(() => createStyles(COLORS), [COLORS]);
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, updateAvatar } = useAuth();
   const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const [formData, setFormData] = useState({
     firstname: user?.firstname ?? '',
@@ -72,6 +75,31 @@ function ProfileInfo() {
   const update = (field: string, value: string) =>
     setFormData(prev => ({ ...prev, [field]: value }));
 
+  const handlePickAvatar = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission required', 'Please allow access to your photo library.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    setUploadingAvatar(true);
+    try {
+      await updateAvatar(asset.uri, asset.mimeType ?? 'image/jpeg');
+      Alert.alert('Success', 'Profile photo updated!');
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to upload photo');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!formData.firstname || !formData.surname || !formData.country_code || !formData.mobile_number || !formData.date_of_birth) {
       Alert.alert('Missing Fields', 'Please fill in all fields before saving.');
@@ -92,13 +120,34 @@ function ProfileInfo() {
     <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.card}>
       {/* Avatar */}
       <View style={styles.avatarSection}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarInitials}>
-            {(user?.firstname?.[0] ?? '?').toUpperCase()}{(user?.surname?.[0] ?? '').toUpperCase()}
-          </Text>
-        </View>
+        <Pressable onPress={handlePickAvatar} style={styles.avatarWrapper}>
+          {user?.avatar_url ? (
+            <Image
+              source={{ uri: `${getBaseUrl()}${user.avatar_url}` }}
+              style={styles.avatarImage}
+            />
+          ) : (
+            <View style={styles.avatar}>
+              <Text style={styles.avatarInitials}>
+                {(user?.firstname?.[0] ?? '?').toUpperCase()}{(user?.surname?.[0] ?? '').toUpperCase()}
+              </Text>
+            </View>
+          )}
+          <View style={styles.avatarEditBadge}>
+            {uploadingAvatar ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Ionicons name="camera" size={14} color="#fff" />
+            )}
+          </View>
+        </Pressable>
         <Text style={styles.avatarName}>{user?.firstname} {user?.surname}</Text>
         <Text style={styles.avatarEmail}>{user?.email}</Text>
+        <Pressable onPress={handlePickAvatar} disabled={uploadingAvatar}>
+          <Text style={[styles.changePhotoText, { color: COLORS.primary }]}>
+            {uploadingAvatar ? 'Uploading…' : user?.avatar_url ? 'Change photo' : 'Upload photo'}
+          </Text>
+        </Pressable>
       </View>
 
       {/* Read-only email banner */}
@@ -285,10 +334,20 @@ const createStyles = (COLORS: AppColors) => StyleSheet.create({
   content: { paddingHorizontal: 20, paddingBottom: 40 },
   card: { backgroundColor: COLORS.card, borderRadius: 20, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   avatarSection: { alignItems: 'center', marginBottom: 20 },
-  avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: `${COLORS.primary}20`, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+  avatarWrapper: { position: 'relative', marginBottom: 10 },
+  avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: `${COLORS.primary}20`, justifyContent: 'center', alignItems: 'center' },
+  avatarImage: { width: 80, height: 80, borderRadius: 40 },
+  avatarEditBadge: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, borderColor: COLORS.card,
+  },
   avatarInitials: { fontSize: 28, fontWeight: '700', color: COLORS.primary },
   avatarName: { fontSize: 18, fontWeight: '700', color: COLORS.text },
   avatarEmail: { fontSize: 14, color: COLORS.textSecondary, marginTop: 2 },
+  changePhotoText: { fontSize: 13, fontWeight: '600', marginTop: 6 },
   readOnlyBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: `${COLORS.textSecondary}10`, borderRadius: 10,

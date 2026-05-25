@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { getCurrentUser, updateProfile, changePassword, type User } from "@/lib/auth";
+import { getCurrentUser, updateProfile, changePassword, uploadAvatar, type User } from "@/lib/auth";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
 type Tab = "information" | "password";
 
@@ -41,22 +44,7 @@ export default function ProfilePage() {
         </div>
 
         {/* Avatar card */}
-        <Card className="border-0 shadow-sm mb-6">
-          <CardContent className="pt-6 flex items-center gap-4">
-            <div className="w-16 h-16 rounded-full bg-indigo-100 dark:bg-indigo-950 flex items-center justify-center shrink-0">
-              <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
-                {user.firstname[0]?.toUpperCase()}{user.surname[0]?.toUpperCase()}
-              </span>
-            </div>
-            <div>
-              <p className="font-semibold text-lg">{user.firstname} {user.surname}</p>
-              <p className="text-muted-foreground text-sm">{user.email}</p>
-              <span className="inline-block mt-1 text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 capitalize">
-                {user.role}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
+        <AvatarCard user={user} token={token} onUpdated={setUser} />
 
         {/* Tabs */}
         <div className="flex gap-2 mb-6 bg-card rounded-xl p-1.5 shadow-sm">
@@ -82,6 +70,84 @@ export default function ProfilePage() {
         )}
       </div>
     </div>
+  );
+}
+
+function AvatarCard({ user, token, onUpdated }: { user: User; token: string; onUpdated: (u: User) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [avatarErr, setAvatarErr] = useState<string | null>(null);
+
+  const avatarSrc = preview ?? (user.avatar_url ? `${API_URL}${user.avatar_url}` : null);
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPreview(URL.createObjectURL(file));
+    setAvatarErr(null);
+    setUploading(true);
+    try {
+      const updated = await uploadAvatar(token, file);
+      localStorage.setItem("user", JSON.stringify(updated));
+      onUpdated(updated);
+    } catch (err: any) {
+      setAvatarErr(err.message);
+      setPreview(null);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  return (
+    <Card className="border-0 shadow-sm mb-6">
+      <CardContent className="pt-6 flex items-center gap-4">
+        <div className="relative shrink-0">
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="relative w-16 h-16 rounded-full overflow-hidden ring-2 ring-indigo-200 dark:ring-indigo-800 hover:ring-indigo-400 transition-all group"
+            title="Change profile photo"
+          >
+            {avatarSrc ? (
+              <Image src={avatarSrc} alt="Avatar" fill className="object-cover" unoptimized />
+            ) : (
+              <div className="w-full h-full bg-indigo-100 dark:bg-indigo-950 flex items-center justify-center">
+                <span className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">
+                  {user.firstname[0]?.toUpperCase()}{user.surname[0]?.toUpperCase()}
+                </span>
+              </div>
+            )}
+            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </div>
+          </button>
+          {uploading && (
+            <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50">
+              <svg className="h-5 w-5 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            </div>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+        </div>
+        <div>
+          <p className="font-semibold text-lg">{user.firstname} {user.surname}</p>
+          <p className="text-muted-foreground text-sm">{user.email}</p>
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="mt-1 text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
+          >
+            {user.avatar_url ? "Change photo" : "Upload photo"}
+          </button>
+          {avatarErr && <p className="text-xs text-red-500 mt-0.5">{avatarErr}</p>}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

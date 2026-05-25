@@ -141,6 +141,7 @@ export const initDb = async () => {
     )
   `);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'user'`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500) DEFAULT NULL`);
 
   // predictions table
   await pool.query(`
@@ -253,6 +254,18 @@ export const initDb = async () => {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_community_group_posts_group ON community_group_posts(group_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_community_group_posts_user ON community_group_posts(user_id)`);
+  await pool.query(`ALTER TABLE community_group_posts ADD COLUMN IF NOT EXISTS image_url VARCHAR(500) DEFAULT NULL`);
+
+  // community_post_images table (supports up to 5 images per post)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS community_post_images (
+      id SERIAL PRIMARY KEY,
+      post_id INT NOT NULL REFERENCES community_group_posts(id) ON DELETE CASCADE,
+      image_url VARCHAR(500) NOT NULL,
+      sort_order INT DEFAULT 0
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_community_post_images_post ON community_post_images(post_id)`);
 
   // community_post_comments table
   await pool.query(`
@@ -293,6 +306,34 @@ export const initDb = async () => {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_community_post_likes_post ON community_post_likes(post_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_community_post_likes_user ON community_post_likes(user_id)`);
 
+  // course_enrollments table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS course_enrollments (
+      id SERIAL PRIMARY KEY,
+      course_id INT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+      user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      enrolled_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed','dropped')),
+      UNIQUE (course_id, user_id)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_course_enrollments_course ON course_enrollments(course_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_course_enrollments_user ON course_enrollments(user_id)`);
+
+  // lesson_media table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS lesson_media (
+      id SERIAL PRIMARY KEY,
+      lesson_id INT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+      media_type VARCHAR(10) NOT NULL DEFAULT 'video' CHECK (media_type IN ('video','file')),
+      title VARCHAR(255) NOT NULL,
+      url VARCHAR(1000) NOT NULL,
+      sort_order INT DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_lesson_media_lesson ON lesson_media(lesson_id)`);
+
   // Flat view for easy reads — drop first so column renames always apply
   await pool.query(`DROP VIEW IF EXISTS v_draws_flat CASCADE`);
   await pool.query(`
@@ -321,6 +362,60 @@ export const initDb = async () => {
     GROUP BY d.id, d.event_number, dy.date, d.source, d.file_name
     ORDER BY d.event_number
   `);
+
+  // admin_predictions table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS admin_predictions (
+      id SERIAL PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      game_name VARCHAR(100) NOT NULL,
+      draw_date DATE NOT NULL,
+      numbers TEXT NOT NULL,
+      machine_numbers TEXT DEFAULT NULL,
+      notes TEXT DEFAULT NULL,
+      is_published SMALLINT NOT NULL DEFAULT 1,
+      prediction_type VARCHAR(10) NOT NULL DEFAULT 'free',
+      price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      created_by INT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`ALTER TABLE admin_predictions ADD COLUMN IF NOT EXISTS prediction_type VARCHAR(10) NOT NULL DEFAULT 'free'`);
+  await pool.query(`ALTER TABLE admin_predictions ADD COLUMN IF NOT EXISTS price DECIMAL(10,2) NOT NULL DEFAULT 0.00`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_admin_predictions_date ON admin_predictions(draw_date DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_admin_predictions_game ON admin_predictions(game_name)`);
+
+  // prediction_purchases table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS prediction_purchases (
+      id SERIAL PRIMARY KEY,
+      user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      prediction_id INT NOT NULL REFERENCES admin_predictions(id) ON DELETE CASCADE,
+      amount_paid DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      paid_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, prediction_id)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pred_purchases_user ON prediction_purchases(user_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pred_purchases_pred ON prediction_purchases(prediction_id)`);
+
+  // subscription columns on users
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_plan VARCHAR(20) NOT NULL DEFAULT 'free'`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_expires_at TIMESTAMP DEFAULT NULL`);
+
+  // refresh_tokens table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+      id SERIAL PRIMARY KEY,
+      user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash VARCHAR(255) NOT NULL UNIQUE,
+      expires_at TIMESTAMP NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hash ON refresh_tokens(token_hash)`);
 
   // Seed default courses if empty
   const courseCount = await pool.query('SELECT COUNT(*) as count FROM courses');

@@ -9,10 +9,12 @@ import universityRoutes from './routes/university.js';
 import toolsRoutes from './routes/tools.js';
 import communityRoutes from './routes/community.js';
 import aiPredictRoutes from './routes/ai-predict.js';
+import predictionsRoutes from './routes/predictions.js';
 import morgan from 'morgan';
 import cors from 'cors';
 import { setupSyncCron } from './utils/schedule-sync.js';
 import { syncGoogleDrive } from './utils/sync-google-drive.js';
+import { apiLimiter } from './middlewares/rate-limit.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -21,6 +23,10 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json());
+app.use(apiLimiter);
+
+// Serve uploaded files (avatars, post images)
+app.use('/uploads', express.static('uploads'));
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -30,6 +36,7 @@ app.use('/api/university', universityRoutes);
 app.use('/api/tools', toolsRoutes);
 app.use('/api/community', communityRoutes);
 app.use('/api/ai-predict', aiPredictRoutes);
+app.use('/api/predictions', predictionsRoutes);
 
 app.get('/', (req: Request, res: Response) => {
   res.send('Welcome to the Lotto Prophet API!');

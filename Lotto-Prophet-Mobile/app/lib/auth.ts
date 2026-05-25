@@ -14,11 +14,13 @@ export type User = {
   referral_code: string | null;
   date_of_birth: string;
   created_at: string;
+  avatar_url?: string | null;
 };
 
 export type AuthResponse = {
   message: string;
   token?: string;
+  refresh_token?: string;
   user?: User;
 };
 
@@ -227,6 +229,22 @@ export async function updateProfile(token: string, data: ProfileUpdateData): Pro
   }
 }
 
+export async function uploadAvatar(token: string, imageUri: string, mimeType = 'image/jpeg'): Promise<User> {
+  const filename = imageUri.split('/').pop() ?? 'avatar.jpg';
+  const formData = new FormData();
+  formData.append('avatar', { uri: imageUri, type: mimeType, name: filename } as any);
+  const response = await fetch(`${BASE_URL}/api/auth/avatar`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || 'Failed to upload avatar');
+  return data.user as User;
+}
+
+export const getBaseUrl = () => BASE_URL;
+
 export async function changePassword(
   token: string,
   current_password: string,
@@ -255,6 +273,28 @@ export async function resetPassword(
     return data;
   } catch (err) {
     throw new Error(extractError(err, 'Failed to reset password'));
+  }
+}
+
+export async function refreshAccessToken(
+  refresh_token: string,
+): Promise<{ token: string; refresh_token: string }> {
+  try {
+    const { data } = await api.post<{ token: string; refresh_token: string }>(
+      '/refresh',
+      { refresh_token },
+    );
+    return data;
+  } catch (err) {
+    throw new Error(extractError(err, 'Session expired. Please log in again.'));
+  }
+}
+
+export async function serverLogout(refresh_token: string): Promise<void> {
+  try {
+    await api.post('/logout', { refresh_token });
+  } catch {
+    // Best-effort
   }
 }
 

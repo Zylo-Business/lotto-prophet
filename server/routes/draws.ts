@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { dbAll } from '../db/db.js';
+import { authenticate } from '../middlewares/auth.js';
 
 const router = Router();
 
@@ -8,7 +9,7 @@ const router = Router();
  * Returns distinct draw source names from the database.
  * e.g. [{ source: 'alpha', draw_count: 1200 }, { source: 'lucky', draw_count: 800 }]
  */
-router.get('/sources', async (_req: Request, res: Response) => {
+router.get('/sources', authenticate, async (_req: Request, res: Response) => {
   try {
     const rows = await dbAll(`
       SELECT source, file_name, COUNT(*) as draw_count
@@ -44,7 +45,7 @@ router.get('/sources', async (_req: Request, res: Response) => {
  * using the flat view for easy consumption.
  * Supports optional query params: ?limit=30&offset=0
  */
-router.get('/:source', async (req: Request, res: Response) => {
+router.get('/:source', authenticate, async (req: Request, res: Response) => {
   try {
     const { source } = req.params;
     const fileName = (req.query.file_name as string) || null;

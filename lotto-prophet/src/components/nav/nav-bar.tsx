@@ -11,6 +11,7 @@ import {
   NavigationMenuList,
 } from "@/components/ui/navigation-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { logout } from "@/lib/auth";
 
 export function NavBar() {
   const pathname = usePathname();
@@ -35,8 +36,11 @@ export function NavBar() {
     }
   }, [pathname]);
 
-  function handleLogout() {
+  async function handleLogout() {
+    const refreshToken = localStorage.getItem("refresh_token");
+    if (refreshToken) await logout(refreshToken);
     localStorage.removeItem("token");
+    localStorage.removeItem("refresh_token");
     localStorage.removeItem("user");
     setIsLoggedIn(false);
     setUserName("");
